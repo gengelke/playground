@@ -2,9 +2,10 @@ version: "3.9"
 
 services:
   fastapi:
+    user: "${UID}:${GID}"
     build: ./fastapi
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./:/data
 
@@ -19,6 +20,7 @@ services:
     volumes:
       - ./:/workspace
     working_dir: /workspace
+    user: "${UID}:${GID}"
     command: >
       bash -c "
       echo 'Waiting for API...' &&

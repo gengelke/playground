@@ -34,7 +34,7 @@ install: venv
 
 .PHONY: build
 build:
-	docker compose up --build -d
+	UID=$$(id -u) GID=$$(id -g) docker compose up --build -d
 
 # ==========================================
 # Run pytest
@@ -98,7 +98,7 @@ clean-all: clean
 
 .PHONY: codegen
 codegen:
-	docker compose run codegen
+	UID=$$(id -u) GID=$$(id -g) docker compose run codegen
 
 # ==========================================
 # Show help
