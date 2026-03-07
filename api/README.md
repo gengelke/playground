@@ -16,7 +16,7 @@ make clean
 make distclean
 ```
 
-### Start without Docker
+### Start FastAPI without Docker
 ```
 make install
 make run
@@ -33,7 +33,7 @@ To regenerate the GraphQL client from Bash:
 make codegen
 ```
 
-### Start with Docker
+### Start FastAPI with Docker
 ```
 make run-docker
 ```
@@ -48,7 +48,7 @@ Stop Docker services:
 make stop-docker
 ```
 
-Optional one-shot workflows:
+### Optional one-shot workflows:
 ```
 make all-local
 make all-docker
