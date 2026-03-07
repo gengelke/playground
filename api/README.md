@@ -1,63 +1,73 @@
 ## Playground for REST and GraphQL APIs
 
-Most of the code was generated with the help of AI and Vibe Coding.
-It creates a FastAPI API running on localhost:8000 which provides classic REST as well as GraphQL endpoints.
-The GraphQL endpoints are then used the automagically generate a Python library. So any Python client can import the library and use the API endpoints without any further development. In addition Pytest test cases are automatically generated and executed.
-You can run the project either with Docker or directly via Bash CLI (local venv).
-One can easily use the code via the following Make targets:
-```
+This project provides a FastAPI service on `127.0.0.1:8000` with:
+- REST endpoints (`/employees`, `/employees/{employee_id}`)
+- GraphQL endpoint (`/graphql`)
+- GraphQL SDL export endpoint (`/schema.graphql`)
+
+The GraphQL schema is used to generate a Python client (`generated_client`), and tests run against that generated client.
+You can run everything locally (venv + bash) or with Docker.
+
+## Quick Start
+```bash
+# full local workflow: start API, codegen, install, test, run example
 make
 ```
-```
-make example
-```
-```
+
+```bash
 make clean
 make distclean
 ```
 
-### Start FastAPI without Docker
-```
+### Start API without Docker
+```bash
 make install
 make run
 ```
 
 Background mode:
-```
+```bash
 make run-bg
 make stop
 ```
 
 To regenerate the GraphQL client from Bash:
-```
+```bash
 make codegen
 ```
 
-### Start FastAPI with Docker
+Run tests and the example client:
+```bash
+make test
+make example
+make cli-list
 ```
+
+### Start API with Docker
+```bash
 make run-docker
 ```
 
 Regenerate GraphQL client inside Docker:
-```
+```bash
 make codegen-docker
 ```
 
 Stop Docker services:
-```
+```bash
 make stop-docker
 ```
 
 ### Optional one-shot workflows:
-```
+```bash
 make all-local
 make all-docker
 ```
 
 ### Open
 ```
-http://localhost:8000/docs
-http://localhost:8000/graphql
+http://127.0.0.1:8000/docs
+http://127.0.0.1:8000/graphql
 ```
 
 ### REST - GET all employees
@@ -78,7 +88,8 @@ curl -X POST http://127.0.0.1:8000/employees \
 ```
 
 ### REST - PUT update employee
-```
+```bash
+# note: employee_id in path and request body must match
 curl -X PUT http://127.0.0.1:8000/employees/2 \
   -H "Content-Type: application/json" \
   -d '{
@@ -131,8 +142,8 @@ curl -X POST http://127.0.0.1:8000/graphql \
   }'
 ```
 
-### Use the Python library in a script:
-```
+### Use the Python library in a script
+```bash
 rm -rf .venv/
 python3 -m venv .venv
 source .venv/bin/activate
@@ -147,14 +158,13 @@ pip3 install pydantic httpx
 python3 example_client.py
 ```
 
-### Install and use the Python library directly in CLI:
-```
+### Install and use the Python library directly in CLI
+```bash
 pip install -e .
 employee-cli list
-
 ```
 
-### Vibe conding steps
+### Vibe coding prompts
 ```
 i am a python rookie. generate simple plain easy to understand code which uses
 an sqlite database named company.sqlite. the database includes a table named
