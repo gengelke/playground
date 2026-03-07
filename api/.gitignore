@@ -73,6 +73,12 @@ docker-compose.override.yml
 .env
 
 # ==========================================
+# Generated GraphQL schema / client
+# ==========================================
+schema.graphql
+schema.json
+
+# ==========================================
 # Temporary files
 # ==========================================
 *.tmp

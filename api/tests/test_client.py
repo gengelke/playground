@@ -1,49 +1,49 @@
-import inspect
+import os
 import pytest
 import random
 
 from generated_client.client import Client
+from generated_client.exceptions import GraphQLClientGraphQLMultiError
 
-API_URL = "http://localhost:8000/graphql"
-
-
-def discover_api_methods():
-    """Return all public async methods of the generated client."""
-    for name, method in inspect.getmembers(Client, inspect.iscoroutinefunction):
-        if not name.startswith("_"):
-            yield name
+API_URL = os.getenv("API_URL", "http://127.0.0.1:8000/graphql")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize( "method_name", list( discover_api_methods() ) )
-async def test_generated_client_methods( method_name ):
+async def test_get_employees():
+    client = Client(url=API_URL)
+    result = await client.get_employees()
+    payload = result.model_dump()
+    assert "employees" in payload
+    assert isinstance(payload["employees"], list)
 
-    client = Client( url=API_URL )
 
-    method = getattr( client, method_name )
+@pytest.mark.asyncio
+async def test_employee_mutation_flow():
+    client = Client(url=API_URL)
+    employee_id = random.randint(10000, 20000)
 
-    sig = inspect.signature( method )
-
-    kwargs = {}
-
-    # automatic argument generation
-    for param in sig.parameters.values():
-
-        if param.name == "employee_id":
-            kwargs["employee_id"] = random.randint( 10000, 20000 )
-
-        elif param.name == "name":
-            kwargs["name"] = "Test"
-
-        elif param.name == "surname":
-            kwargs["surname"] = "User"
-
-        elif param.name == "description":
-            kwargs["description"] = "Test employee"
+    add_result = await client.add_employee(
+        employee_id=employee_id,
+        name="Test",
+        surname="User",
+        description="Test employee",
+    )
+    assert add_result.model_dump()["add_employee"] == "Employee added successfully"
 
     try:
-        result = await method( **kwargs )
-        assert result is not None
+        update_result = await client.update_employee(
+            employee_id=employee_id,
+            name="Test",
+            surname="User",
+            description="Updated test employee",
+        )
+        assert update_result.model_dump()["update_employee"] == "Employee updated successfully"
 
-    except Exception as e:
-        pytest.skip( f"{method_name} skipped: {e}" )
+        delete_result = await client.delete_employee(employee_id=employee_id)
+        assert delete_result.model_dump()["delete_employee"] == "Employee deleted successfully"
+
+        with pytest.raises(GraphQLClientGraphQLMultiError):
+            await client.delete_employee(employee_id=employee_id)
+    except Exception:
+        await client.delete_employee(employee_id=employee_id)
+        raise

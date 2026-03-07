@@ -2,29 +2,33 @@
 # Configuration
 # ==========================================
 
-VENV := .venv
-PIP := $(VENV)/bin/pip
-PYTHON := $(VENV)/bin/python3
-PYTEST := $(VENV)/bin/pytest
-UVICORN := $(VENV)/bin/uvicorn
-EMPLOYEECLI := $(VENV)/bin/employee-cli
-PID_FILE := .fastapi.pid
-API_URL ?= http://127.0.0.1:8000
-DEPS_STAMP := $(VENV)/.deps-installed
+VENV           := .venv
+PIP            := $(VENV)/bin/pip
+PYTHON         := $(VENV)/bin/python3
+PYTEST         := $(VENV)/bin/pytest
+UVICORN        := $(VENV)/bin/uvicorn
+EMPLOYEECLI    := $(VENV)/bin/employee-cli
+PID_FILE       := .fastapi.pid
+API_URL        ?= http://127.0.0.1:8000
+DEPS_STAMP     := $(VENV)/.deps-installed
 DOCKER_COMPOSE ?= docker compose
 
 .PHONY: all
 all: all-local
 
+# ==========================================
+# Workflows
+# ==========================================
+
 .PHONY: all-local
 all-local:
 	@set -e; \
-		$(MAKE) run-bg; \
-		trap '$(MAKE) stop' EXIT; \
-		$(MAKE) codegen; \
-		$(MAKE) install; \
-		$(MAKE) test; \
-		$(MAKE) example
+	$(MAKE) run-bg; \
+	trap '$(MAKE) stop' EXIT; \
+	$(MAKE) codegen; \
+	$(MAKE) install; \
+	PYTHONPATH=. $(PYTEST) -v; \
+	$(PYTHON) example_client.py
 
 .PHONY: all-docker
 all-docker:
@@ -49,16 +53,12 @@ $(DEPS_STAMP): | venv
 .PHONY: deps
 deps: $(DEPS_STAMP)
 
-# ==========================================
-# Install project
-# ==========================================
-
 .PHONY: install
 install: deps
 	$(PIP) install -e . --no-build-isolation
 
 # ==========================================
-# Run FastAPI
+# Run FastAPI (local)
 # ==========================================
 
 .PHONY: run
@@ -88,19 +88,16 @@ stop:
 			kill $$PID; \
 			echo "Stopped FastAPI (PID $$PID)"; \
 		fi; \
-			rm -f $(PID_FILE); \
-		fi
+		rm -f $(PID_FILE); \
+	fi
 
 # ==========================================
-# Docker mode (legacy/original style)
+# Docker
 # ==========================================
 
 .PHONY: run-docker
 run-docker:
 	$(DOCKER_COMPOSE) up --build -d fastapi
-
-.PHONY: build
-build: run-docker
 
 .PHONY: codegen-docker
 codegen-docker:
@@ -110,103 +107,76 @@ codegen-docker:
 stop-docker:
 	$(DOCKER_COMPOSE) down
 
+.PHONY: clean-docker
+clean-docker:
+	$(DOCKER_COMPOSE) down --rmi local --volumes --remove-orphans
+
 # ==========================================
-# Regenerate GraphQL client
+# Codegen, test, example, CLI
 # ==========================================
 
 .PHONY: codegen
 codegen: deps
 	bash library-builder/generate-client.sh
 
-# ==========================================
-# Run pytest
-# ==========================================
-
 .PHONY: test
 test: deps
-	$(PYTEST) -v
+	@set -e; \
+	$(MAKE) run-bg; \
+	trap '$(MAKE) stop' EXIT; \
+	$(MAKE) codegen; \
+	$(MAKE) install; \
+	PYTHONPATH=. $(PYTEST) -v
 
-# ==========================================
-# Run CLI
-# ==========================================
+.PHONY: example
+example: deps
+	$(PYTHON) example_client.py
 
 .PHONY: cli-list
 cli-list: deps
 	$(EMPLOYEECLI) list
 
 # ==========================================
-# Run example
-# ==========================================
-
-.PHONY: example
-example: deps
-	$(PYTHON) example_client.py
-
-# ==========================================
-# Clean build artifacts
+# Clean
 # ==========================================
 
 .PHONY: clean
 clean: stop
 	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	find . -type f -name "*.pyo" -delete
-	find . -type f -name "*.un~" -delete
-	rm -rf generated_client
-	rm -rf dist
-	rm -rf *.egg-info
-	rm -rf .pytest_cache
-	rm -rf .mypy_cache
-	rm -rf htmlcov
-	rm -rf .coverage
-	rm -f .fastapi.log
-	rm -f $(DEPS_STAMP)
-	rm -f schema.graphql schema.json
-
-
-# ==========================================
-# Dist clean (full reset: includes DB + venv)
-# ==========================================
+	find . -type f \( -name "*.pyc" -o -name "*.pyo" -o -name "*.un~" \) -delete
+	rm -rf generated_client dist *.egg-info .pytest_cache .mypy_cache htmlcov
+	rm -f .fastapi.log .coverage $(DEPS_STAMP) schema.graphql schema.json
 
 .PHONY: distclean
 distclean: clean
 	rm -rf $(VENV)
-	rm -f *.sqlite
-	rm -f *.db
-
-.PHONY: dist-clean
-dist-clean: distclean
-
-.PHONY: clean-docker
-clean-docker:
-	$(DOCKER_COMPOSE) down --rmi local --volumes --remove-orphans
+	rm -f *.sqlite *.db
 
 # ==========================================
-# Show help
+# Help
 # ==========================================
 
 .PHONY: help
 help:
 	@echo ""
-	@echo "Available targets:"
+	@echo "Local:"
+	@echo "  make all-local      full workflow: server, codegen, test, example"
+	@echo "  make run            start FastAPI in foreground"
+	@echo "  make run-bg         start FastAPI in background"
+	@echo "  make stop           stop background FastAPI"
+	@echo "  make codegen        regenerate GraphQL client"
+	@echo "  make test           run pytest (manages server automatically)"
+	@echo "  make example        run example client"
+	@echo "  make cli-list       list employees via CLI"
 	@echo ""
-	@echo "make venv        - create virtual environment"
-	@echo "make install     - install project (editable)"
-	@echo "make all-local   - full local workflow (without Docker)"
-	@echo "make all-docker  - start Docker API + run Docker codegen"
-	@echo "make run         - start FastAPI server in foreground"
-	@echo "make run-bg      - start FastAPI server in background"
-	@echo "make stop        - stop background FastAPI server"
-	@echo "make codegen     - regenerate GraphQL client"
-	@echo "make run-docker  - start FastAPI with Docker"
-	@echo "make build       - alias for run-docker (legacy)"
-	@echo "make codegen-docker - regenerate GraphQL client in Docker"
-	@echo "make stop-docker - stop Docker services"
-	@echo "make test        - run pytest"
-	@echo "make example     - run example client"
-	@echo "make cli-list    - run CLI to list employees"
-	@echo "make clean       - remove build artifacts"
-	@echo "make distclean   - remove artifacts + venv + sqlite db"
-	@echo "make dist-clean  - alias for distclean"
-	@echo "make clean-docker - remove Docker containers/images/volumes"
+	@echo "Docker:"
+	@echo "  make all-docker     start Docker API + run codegen"
+	@echo "  make run-docker     start FastAPI with Docker"
+	@echo "  make codegen-docker regenerate GraphQL client in Docker"
+	@echo "  make stop-docker    stop Docker services"
+	@echo "  make clean-docker   remove containers/images/volumes"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  make clean          remove build artifacts"
+	@echo "  make distclean      remove artifacts + venv + sqlite db"
 	@echo ""

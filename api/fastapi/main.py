@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager, contextmanager
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 import os
@@ -10,8 +11,6 @@ import strawberry
 from strawberry.fastapi import GraphQLRouter
 
 
-app = FastAPI()
-
 # Prefer mounted Docker path if available; otherwise use repo-local sqlite path.
 default_db_path = Path("/data/company.sqlite") if Path("/data").exists() else Path(__file__).resolve().parent.parent / "company.sqlite"
 DATABASE = os.getenv("DATABASE_PATH", str(default_db_path))
@@ -21,145 +20,96 @@ DATABASE = os.getenv("DATABASE_PATH", str(default_db_path))
 # DATABASE LAYER (CENTRALIZED)
 # =====================================================
 
+@contextmanager
 def get_connection():
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
-    return connection
+    try:
+        yield connection
+    finally:
+        connection.close()
 
 
 def create_table():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS employees (
-        employee_id INTEGER PRIMARY KEY,
-        name TEXT,
-        surname TEXT,
-        description TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        conn.execute("""
+        CREATE TABLE IF NOT EXISTS employees (
+            employee_id INTEGER PRIMARY KEY,
+            name TEXT,
+            surname TEXT,
+            description TEXT
+        )
+        """)
+        conn.commit()
 
 
 def seed_initial_data():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT COUNT(*) as count FROM employees")
-    result = cursor.fetchone()
-
-    if result["count"] == 0:
-        cursor.execute("""
-        INSERT INTO employees (employee_id, name, surname, description)
-        VALUES (?, ?, ?, ?)
-        """, (1, "Flash", "Gordon", "Superhero"))
-        conn.commit()
-
-    conn.close()
+    with get_connection() as conn:
+        result = conn.execute("SELECT COUNT(*) as count FROM employees").fetchone()
+        if result["count"] == 0:
+            conn.execute("""
+            INSERT INTO employees (employee_id, name, surname, description)
+            VALUES (?, ?, ?, ?)
+            """, (1, "Flash", "Gordon", "Superhero"))
+            conn.commit()
 
 
 def get_employees_db():
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT * FROM employees")
-    rows = cursor.fetchall()
-
-    conn.close()
-    return [dict(row) for row in rows]
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM employees").fetchall()
+        return [dict(row) for row in rows]
 
 
 def get_employee_db(employee_id: int):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM employees WHERE employee_id = ?",
-        (employee_id,)
-    )
-
-    row = cursor.fetchone()
-    conn.close()
-
-    if row:
-        return dict(row)
-
-    return None
-
-
-def get_employee_by_surname_db(surname: str):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute(
-        "SELECT * FROM employees WHERE surname = ?",
-        (surname,)
-    )
-
-    row = cursor.fetchone()
-    conn.close()
-
-    if row:
-        return dict(row)
-
-    return None
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM employees WHERE employee_id = ?",
+            (employee_id,)
+        ).fetchone()
+        return dict(row) if row else None
 
 
 def add_employee_db(employee_id, name, surname, description):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    INSERT INTO employees (employee_id, name, surname, description)
-    VALUES (?, ?, ?, ?)
-    """, (employee_id, name, surname, description))
-
-    conn.commit()
-    conn.close()
+    with get_connection() as conn:
+        conn.execute("""
+        INSERT INTO employees (employee_id, name, surname, description)
+        VALUES (?, ?, ?, ?)
+        """, (employee_id, name, surname, description))
+        conn.commit()
 
 
-def update_employee_db(employee_id, name, surname, description):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-    UPDATE employees
-    SET name = ?, surname = ?, description = ?
-    WHERE employee_id = ?
-    """, (name, surname, description, employee_id))
-
-    conn.commit()
-    conn.close()
+def update_employee_db(employee_id, name, surname, description) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute("""
+        UPDATE employees
+        SET name = ?, surname = ?, description = ?
+        WHERE employee_id = ?
+        """, (name, surname, description, employee_id))
+        conn.commit()
+        return cursor.rowcount
 
 
-def delete_employee_db(employee_id):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("DELETE FROM employees WHERE employee_id = ?",
-                   (employee_id,))
-
-    conn.commit()
-    conn.close()
+def delete_employee_db(employee_id) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM employees WHERE employee_id = ?", (employee_id,)
+        )
+        conn.commit()
+        return cursor.rowcount
 
 
 # =====================================================
 # STARTUP
 # =====================================================
 
-@app.on_event("startup")
-def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     create_table()
     seed_initial_data()
+    yield
 
 
-# Optional: Export schema via curl
-# GET /schema.graphql
-# =====================================================
-# Will be available after schema definition below
+app = FastAPI(lifespan=lifespan)
 
 
 # =====================================================
@@ -183,48 +133,52 @@ def get_employees():
 @app.get("/employees/{employee_id}")
 def get_employee(employee_id: int):
     employee = get_employee_db(employee_id)
-
     if not employee:
         raise HTTPException(status_code=404, detail="Employee not found")
-
     return employee
 
 
 # -------- POST add employee --------
 @app.post("/employees")
 def add_employee(employee: Employee):
-    add_employee_db(
-        employee.employee_id,
-        employee.name,
-        employee.surname,
-        employee.description
-    )
+    try:
+        add_employee_db(
+            employee.employee_id,
+            employee.name,
+            employee.surname,
+            employee.description
+        )
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=409, detail="Employee with this ID already exists")
     return {"message": "Employee added successfully"}
 
 
 # -------- PUT update employee --------
 @app.put("/employees/{employee_id}")
 def update_employee(employee_id: int, employee: Employee):
-    update_employee_db(
+    if employee.employee_id != employee_id:
+        raise HTTPException(
+            status_code=400,
+            detail="employee_id in path and body must match",
+        )
+    rows = update_employee_db(
         employee_id,
         employee.name,
         employee.surname,
         employee.description
     )
+    if rows == 0:
+        raise HTTPException(status_code=404, detail="Employee not found")
     return {"message": "Employee updated successfully"}
 
 
 # -------- DELETE employee --------
 @app.delete("/employees/{employee_id}")
 def delete_employee(employee_id: int):
-    delete_employee_db(employee_id)
+    rows = delete_employee_db(employee_id)
+    if rows == 0:
+        raise HTTPException(status_code=404, detail="Employee not found")
     return {"message": "Employee deleted successfully"}
-
-
-# Optional: export SDL via curl
-@app.get("/schema.graphql")
-def export_schema():
-    return Response(schema.as_str(), media_type="text/plain")
 
 
 # =====================================================
@@ -250,37 +204,32 @@ class Query:
     @strawberry.field
     def employee(self, employee_id: int) -> EmployeeType | None:
         employee = get_employee_db(employee_id)
-
         if employee:
             return EmployeeType(**employee)
-
         return None
 
-#    @strawberry.field
-#    def employee_by_surname( self, employee_surname: str ) -> EmployeeType | None:
-#        employee = get_employee_by_surname_db( employee_surname )
-#
-#        if employee:
-#            return EmployeeType( **employee )
-#
-#        return None
 
 @strawberry.type
 class Mutation:
 
     @strawberry.mutation
     def add_employee(self, employee_id: int, name: str, surname: str, description: str) -> str:
-        add_employee_db(employee_id, name, surname, description)
+        try:
+            add_employee_db(employee_id, name, surname, description)
+        except sqlite3.IntegrityError:
+            raise ValueError(f"Employee {employee_id} already exists")
         return "Employee added successfully"
 
     @strawberry.mutation
     def update_employee(self, employee_id: int, name: str, surname: str, description: str) -> str:
-        update_employee_db(employee_id, name, surname, description)
+        if update_employee_db(employee_id, name, surname, description) == 0:
+            raise ValueError(f"Employee {employee_id} not found")
         return "Employee updated successfully"
 
     @strawberry.mutation
     def delete_employee(self, employee_id: int) -> str:
-        delete_employee_db(employee_id)
+        if delete_employee_db(employee_id) == 0:
+            raise ValueError(f"Employee {employee_id} not found")
         return "Employee deleted successfully"
 
 
@@ -288,3 +237,9 @@ schema = strawberry.Schema(query=Query, mutation=Mutation)
 graphql_app = GraphQLRouter(schema)
 
 app.include_router(graphql_app, prefix="/graphql")
+
+
+# Optional: export SDL via curl
+@app.get("/schema.graphql")
+def export_schema():
+    return Response(schema.as_str(), media_type="text/plain")

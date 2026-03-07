@@ -1,11 +1,13 @@
 import json
 import asyncio
+import os
 from generated_client.client import Client
 from generated_client.exceptions import GraphQLClientGraphQLMultiError
 
 
 async def main():
-    client = Client( url="http://localhost:8000/graphql" )
+    api_url = os.getenv("API_URL", "http://127.0.0.1:8000/graphql")
+    client = Client( url=api_url )
 
     RED    = "\033[38;5;196m"
     GREEN  = "\033[38;5;46m"

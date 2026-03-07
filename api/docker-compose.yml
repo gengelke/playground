@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   fastapi:
     build: ./fastapi
@@ -8,13 +6,10 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./:/data
+      - db_data:/data
 
   codegen:
     build: ./library-builder
-#    build:
-#      context: .
-#      dockerfile: Dockerfile
     container_name: graphql_codegen
     depends_on:
       - fastapi
@@ -31,3 +26,6 @@ services:
       done &&
       bash library-builder/generate-client.sh
       "
+
+volumes:
+  db_data:
