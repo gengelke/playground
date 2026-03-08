@@ -207,13 +207,20 @@ prepare_bootstrap_env() {
     GITEA_ADMIN_PASSWORD="password"
   fi
   if [[ -z "${GITEA_USER:-}" ]]; then
-    GITEA_USER="user"
+    GITEA_USER="myuser"
   fi
   if [[ -z "${GITEA_USER_EMAIL:-}" ]]; then
-    GITEA_USER_EMAIL="user@example.com"
+    GITEA_USER_EMAIL="myuser@example.com"
   fi
   if [[ -z "${GITEA_USER_PASSWORD:-}" ]]; then
     GITEA_USER_PASSWORD="password"
+  fi
+  if [[ "${GITEA_USER}" == "user" ]]; then
+    log "GITEA_USER='user' is reserved in this Gitea version; using 'myuser' instead."
+    GITEA_USER="myuser"
+    if [[ "${GITEA_USER_EMAIL}" == "user@example.com" ]]; then
+      GITEA_USER_EMAIL="myuser@example.com"
+    fi
   fi
   if [[ -z "${GITEA_RUNNER_TOKEN:-}" ]]; then
     from_file="$(envfile_get "$env_file" "GITEA_RUNNER_TOKEN" || true)"
@@ -288,4 +295,289 @@ prepare_bootstrap_env() {
   if (( explicit_admin_password == 0 || explicit_user_password == 0 || explicit_runner_token == 0 )); then
     log "Persisted bootstrap values in: ${env_file}"
   fi
+}
+
+ensure_example_workflow_repo() {
+  local auto_add="${GITEA_AUTO_ADD_EXAMPLE_WORKFLOW:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping example workflow setup (GITEA_AUTO_ADD_EXAMPLE_WORKFLOW=${GITEA_AUTO_ADD_EXAMPLE_WORKFLOW:-false})"
+      return 0
+      ;;
+  esac
+
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_EXAMPLE_REPO:-actions-hello-world}"
+  local file_path=".gitea/workflows/hello-world.yml"
+  local file_url="${instance_url}/api/v1/repos/${owner}/${repo_name}/contents/${file_path}"
+
+  local create_body
+  create_body="$(mktemp)"
+  local create_payload
+  create_payload="$(printf '{"name":"%s","auto_init":true}' "$repo_name")"
+
+  local create_status
+  create_status="$(curl -sS -o "$create_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    --data "$create_payload" \
+    "${instance_url}/api/v1/user/repos" || true)"
+
+  if [[ "$create_status" != "201" && "$create_status" != "409" ]]; then
+    cat "$create_body" >&2 || true
+    rm -f "$create_body"
+    die "Failed to create example repository '${owner}/${repo_name}' (HTTP ${create_status})"
+  fi
+  rm -f "$create_body"
+
+  local workflow_content
+  workflow_content="$(cat <<'EOF'
+name: Hello World
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  hello:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print hello world
+        run: echo "Hello, world!"
+EOF
+)"
+  local workflow_b64
+  workflow_b64="$(printf '%s' "$workflow_content" | base64 | tr -d '\n')"
+
+  local get_body
+  get_body="$(mktemp)"
+  local get_status
+  get_status="$(curl -sS -o "$get_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "$file_url" || true)"
+
+  local existing_sha=""
+  if [[ "$get_status" == "200" ]]; then
+    existing_sha="$(tr -d '\n' <"$get_body" | sed -n 's/.*"sha":"\([^"]*\)".*/\1/p' | head -n1)"
+  elif [[ "$get_status" != "404" ]]; then
+    cat "$get_body" >&2 || true
+    rm -f "$get_body"
+    die "Failed to query example workflow file in '${owner}/${repo_name}' (HTTP ${get_status})"
+  fi
+  rm -f "$get_body"
+
+  local update_payload
+  local update_method
+  if [[ -n "$existing_sha" ]]; then
+    update_payload="$(printf '{"content":"%s","message":"chore: add hello world gitea action","sha":"%s"}' "$workflow_b64" "$existing_sha")"
+    update_method="PUT"
+  else
+    update_payload="$(printf '{"content":"%s","message":"chore: add hello world gitea action"}' "$workflow_b64")"
+    update_method="POST"
+  fi
+
+  local update_body
+  update_body="$(mktemp)"
+  local update_status
+  update_status="$(curl -sS -o "$update_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X "$update_method" \
+    --data "$update_payload" \
+    "$file_url" || true)"
+
+  if [[ "$update_status" != "200" && "$update_status" != "201" ]]; then
+    cat "$update_body" >&2 || true
+    rm -f "$update_body"
+    die "Failed to ensure example workflow in '${owner}/${repo_name}' (HTTP ${update_status})"
+  fi
+  rm -f "$update_body"
+
+  log "Ensured example workflow in '${owner}/${repo_name}:${file_path}'"
+}
+
+ensure_jenkins_example_repo() {
+  local auto_add="${GITEA_AUTO_ADD_JENKINS_EXAMPLE:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping jenkins example setup (GITEA_AUTO_ADD_JENKINS_EXAMPLE=${GITEA_AUTO_ADD_JENKINS_EXAMPLE:-false})"
+      return 0
+      ;;
+  esac
+
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_JENKINS_EXAMPLE_REPO:-jenkins-example}"
+  local file_path="Jenkinsfile"
+
+  local create_body
+  create_body="$(mktemp)"
+  local create_payload
+  create_payload="$(printf '{"name":"%s","auto_init":true,"private":true}' "$repo_name")"
+
+  local create_status
+  create_status="$(curl -sS -o "$create_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    --data "$create_payload" \
+    "${instance_url}/api/v1/user/repos" || true)"
+
+  if [[ "$create_status" != "201" && "$create_status" != "409" ]]; then
+    cat "$create_body" >&2 || true
+    rm -f "$create_body"
+    die "Failed to create jenkins example repository '${owner}/${repo_name}' (HTTP ${create_status})"
+  fi
+  rm -f "$create_body"
+
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
+  fi
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
+
+  local prod_jenkinsfile
+  prod_jenkinsfile="$(cat <<'EOF'
+pipeline {
+  agent any
+  stages {
+    stage('Hello') {
+      steps {
+        echo 'hello prod world'
+      }
+    }
+  }
+}
+EOF
+)"
+  local dev_jenkinsfile
+  dev_jenkinsfile="$(cat <<'EOF'
+pipeline {
+  agent any
+  stages {
+    stage('Hello') {
+      steps {
+        echo 'hello dev world'
+      }
+    }
+  }
+}
+EOF
+)"
+
+  local file_url="${instance_url}/api/v1/repos/${owner}/${repo_name}/contents/${file_path}"
+
+  put_repo_file() {
+    local target_branch="$1"
+    local content="$2"
+    local content_b64
+    content_b64="$(printf '%s' "$content" | base64 | tr -d '\n')"
+
+    local get_body
+    get_body="$(mktemp)"
+    local get_status
+    get_status="$(curl -sS -o "$get_body" -w '%{http_code}' \
+      --user "${owner}:${password}" \
+      "${file_url}?ref=${target_branch}" || true)"
+
+    local existing_sha=""
+    if [[ "$get_status" == "200" ]]; then
+      existing_sha="$(tr -d '\n' <"$get_body" | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+    elif [[ "$get_status" != "404" ]]; then
+      cat "$get_body" >&2 || true
+      rm -f "$get_body"
+      die "Failed to query ${file_path} in branch '${target_branch}' (HTTP ${get_status})"
+    fi
+    rm -f "$get_body"
+
+    local payload
+    local write_method
+    if [[ -n "$existing_sha" ]]; then
+      payload="$(printf '{"content":"%s","message":"chore: set jenkins example for %s","branch":"%s","sha":"%s"}' "$content_b64" "$target_branch" "$target_branch" "$existing_sha")"
+      write_method="PUT"
+    else
+      payload="$(printf '{"content":"%s","message":"chore: set jenkins example for %s","branch":"%s"}' "$content_b64" "$target_branch" "$target_branch")"
+      write_method="POST"
+    fi
+
+    local write_body
+    write_body="$(mktemp)"
+    local write_status
+    write_status="$(curl -sS -o "$write_body" -w '%{http_code}' \
+      --user "${owner}:${password}" \
+      -H 'Content-Type: application/json' \
+      -X "$write_method" \
+      --data "$payload" \
+      "$file_url" || true)"
+
+    if [[ "$write_status" != "200" && "$write_status" != "201" ]]; then
+      cat "$write_body" >&2 || true
+      rm -f "$write_body"
+      die "Failed to ensure ${file_path} in branch '${target_branch}' (HTTP ${write_status})"
+    fi
+    rm -f "$write_body"
+  }
+
+  put_repo_file "$default_branch" "$prod_jenkinsfile"
+
+  local branch_body
+  branch_body="$(mktemp)"
+  local branch_status
+  branch_status="$(curl -sS -o "$branch_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    --data "$(printf '{"new_branch_name":"dev","old_ref_name":"%s"}' "$default_branch")" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}/branches" || true)"
+
+  if [[ "$branch_status" != "201" && "$branch_status" != "409" ]]; then
+    local branch_body_2
+    branch_body_2="$(mktemp)"
+    local branch_status_2
+    branch_status_2="$(curl -sS -o "$branch_body_2" -w '%{http_code}' \
+      --user "${owner}:${password}" \
+      -H 'Content-Type: application/json' \
+      -X POST \
+      --data "$(printf '{"new_branch_name":"dev","old_branch_name":"%s"}' "$default_branch")" \
+      "${instance_url}/api/v1/repos/${owner}/${repo_name}/branches" || true)"
+
+    if [[ "$branch_status_2" != "201" && "$branch_status_2" != "409" ]]; then
+      cat "$branch_body" >&2 || true
+      cat "$branch_body_2" >&2 || true
+      rm -f "$branch_body" "$branch_body_2"
+      die "Failed to ensure dev branch in '${owner}/${repo_name}' (HTTP ${branch_status}/${branch_status_2})"
+    fi
+    rm -f "$branch_body_2"
+  fi
+  rm -f "$branch_body"
+
+  put_repo_file "dev" "$dev_jenkinsfile"
+  log "Ensured Jenkins example repo '${owner}/${repo_name}' with branches '${default_branch}' and 'dev'"
 }

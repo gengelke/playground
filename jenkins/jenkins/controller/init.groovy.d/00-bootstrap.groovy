@@ -21,6 +21,9 @@ def pipelineBranch = env.getOrDefault("PIPELINE_BRANCH", "main")
 def pipelineScriptPath = env.getOrDefault("PIPELINE_SCRIPT_PATH", "Jenkinsfile")
 def pipelineJobName = env.getOrDefault("PIPELINE_JOB_NAME", "example-pipeline")
 def pipelineAuthToken = env.getOrDefault("PIPELINE_AUTH_TOKEN", "example-pipeline-auth-token")
+def pipelineGitCredentialsId = env.getOrDefault("PIPELINE_GIT_CREDENTIALS_ID", "").trim()
+def pipelineGitUsername = env.getOrDefault("PIPELINE_GIT_USERNAME", "").trim()
+def pipelineGitPassword = env.getOrDefault("PIPELINE_GIT_PASSWORD", "")
 def agentCount = (env.getOrDefault("AGENT_COUNT", "2") as Integer)
 def agentExecutors = (env.getOrDefault("AGENT_EXECUTORS", "1") as Integer)
 def agentRemoteFs = env.getOrDefault("AGENT_REMOTE_FS", "/home/jenkins/agent")
@@ -38,6 +41,14 @@ def optionalClass = { String className ->
   } catch (ClassNotFoundException ignored) {
     return null
   }
+}
+
+def stripUserInfo = { String repoUrl ->
+  repoUrl?.replaceFirst("://[^/@]+@", "://")
+}
+
+def maskUserInfo = { String repoUrl ->
+  repoUrl?.replaceFirst("://[^/@]+@", "://****@")
 }
 
 if (!adminPassword?.trim()) {
@@ -119,6 +130,10 @@ def cpsScmFlowDefinitionClass = optionalClass("org.jenkinsci.plugins.workflow.cp
 def gitScmClass = optionalClass("hudson.plugins.git.GitSCM")
 def branchSpecClass = optionalClass("hudson.plugins.git.BranchSpec")
 def userRemoteConfigClass = optionalClass("hudson.plugins.git.UserRemoteConfig")
+def systemCredentialsProviderClass = optionalClass("com.cloudbees.plugins.credentials.SystemCredentialsProvider")
+def domainClass = optionalClass("com.cloudbees.plugins.credentials.domains.Domain")
+def credentialsScopeClass = optionalClass("com.cloudbees.plugins.credentials.CredentialsScope")
+def usernamePasswordCredentialsImplClass = optionalClass("com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl")
 
 if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecClass && userRemoteConfigClass) {
   try {
@@ -128,8 +143,60 @@ if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecCl
       println("[bootstrap] created pipeline job ${pipelineJobName}")
     }
 
+    def effectiveGitCredentialsId = pipelineGitCredentialsId
+    if (!effectiveGitCredentialsId && pipelineGitUsername && pipelineGitPassword) {
+      effectiveGitCredentialsId = "${instanceName}-pipeline-git"
+      println("[bootstrap] using generated git credentials id ${effectiveGitCredentialsId}")
+    }
+
+    if (effectiveGitCredentialsId && pipelineGitUsername && pipelineGitPassword) {
+      if (systemCredentialsProviderClass && domainClass && credentialsScopeClass && usernamePasswordCredentialsImplClass) {
+        try {
+          def provider = systemCredentialsProviderClass.getInstance()
+          def store = provider.getStore()
+          def globalDomain = domainClass.global()
+
+          def existing = provider.getCredentials()
+            .find { credential ->
+              try {
+                return credential.getId() == effectiveGitCredentialsId
+              } catch (Exception ignored) {
+                return false
+              }
+            }
+
+          if (existing != null) {
+            store.removeCredentials(globalDomain, existing)
+          }
+
+          def managedGitCredential = usernamePasswordCredentialsImplClass.newInstance(
+            credentialsScopeClass.GLOBAL,
+            effectiveGitCredentialsId,
+            "${managedDescription} (${instanceName} pipeline git)",
+            pipelineGitUsername,
+            pipelineGitPassword
+          )
+          store.addCredentials(globalDomain, managedGitCredential)
+          provider.save()
+          println("[bootstrap] ensured git credentials ${effectiveGitCredentialsId}")
+        } catch (Exception credentialsError) {
+          println("[bootstrap] failed to manage git credentials: ${credentialsError.class.simpleName}: ${credentialsError.message}")
+        }
+      } else {
+        println("[bootstrap] credentials plugin classes unavailable; cannot manage git credentials")
+      }
+    } else if (effectiveGitCredentialsId) {
+      println("[bootstrap] using existing git credentials id ${effectiveGitCredentialsId}")
+    }
+
+    def scmRepoUrl = pipelineRepoUrl
+    if (effectiveGitCredentialsId?.trim()) {
+      scmRepoUrl = stripUserInfo(scmRepoUrl)
+    }
+    def displayRepoUrl = maskUserInfo(scmRepoUrl)
+
     def scm = gitScmClass.newInstance(
-      [userRemoteConfigClass.newInstance(pipelineRepoUrl, null, null, null)],
+      [userRemoteConfigClass.newInstance(scmRepoUrl, null, null, effectiveGitCredentialsId ?: null)],
       [branchSpecClass.newInstance("*/${pipelineBranch}")],
       false,
       [],
@@ -144,7 +211,7 @@ if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecCl
     pipelineJob.setDefinition(definition)
     pipelineJob.setDescription(
       """${managedDescription}
-Pipeline repository: ${pipelineRepoUrl}
+Pipeline repository: ${displayRepoUrl}
 Pipeline branch: ${pipelineBranch}
 Pipeline script path: ${pipelineScriptPath}
 """.stripIndent()

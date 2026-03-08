@@ -10,6 +10,17 @@ COMPOSE_CMD ?= docker compose
 VAULT_ADDR ?= http://127.0.0.1:8200
 
 PIPELINE_REPO_URL ?=
+PROD_PIPELINE_REPO_URL ?=
+DEV_PIPELINE_REPO_URL ?=
+PIPELINE_GIT_CREDENTIALS_ID ?=
+PIPELINE_GIT_USERNAME ?=
+PIPELINE_GIT_PASSWORD ?=
+PROD_PIPELINE_GIT_CREDENTIALS_ID ?=
+PROD_PIPELINE_GIT_USERNAME ?=
+PROD_PIPELINE_GIT_PASSWORD ?=
+DEV_PIPELINE_GIT_CREDENTIALS_ID ?=
+DEV_PIPELINE_GIT_USERNAME ?=
+DEV_PIPELINE_GIT_PASSWORD ?=
 PROD_BRANCH ?= main
 DEV_BRANCH ?= dev
 PIPELINE_SCRIPT_PATH ?= Jenkinsfile
@@ -28,7 +39,11 @@ DEV_HTTP_PORT ?= 8082
 
 STATE_DIR ?= .state
 
-export PIPELINE_REPO_URL PROD_BRANCH DEV_BRANCH PIPELINE_SCRIPT_PATH PIPELINE_JOB_NAME PIPELINE_AUTH_TOKEN
+export PIPELINE_REPO_URL PROD_PIPELINE_REPO_URL DEV_PIPELINE_REPO_URL
+export PIPELINE_GIT_CREDENTIALS_ID PIPELINE_GIT_USERNAME PIPELINE_GIT_PASSWORD
+export PROD_PIPELINE_GIT_CREDENTIALS_ID PROD_PIPELINE_GIT_USERNAME PROD_PIPELINE_GIT_PASSWORD
+export DEV_PIPELINE_GIT_CREDENTIALS_ID DEV_PIPELINE_GIT_USERNAME DEV_PIPELINE_GIT_PASSWORD
+export PROD_BRANCH DEV_BRANCH PIPELINE_SCRIPT_PATH PIPELINE_JOB_NAME PIPELINE_AUTH_TOKEN
 export AGENT_COUNT AGENT_EXECUTORS PROD_HTTP_PORT DEV_HTTP_PORT
 export JENKINS_ADMIN_USER JENKINS_ADMIN_PASSWORD JENKINS_REGULAR_USER JENKINS_REGULAR_PASSWORD
 export JENKINS_REGULAR_API_TOKEN_NAME STATE_DIR
@@ -52,6 +67,14 @@ help:
 	@echo ""
 	@echo "Key variables:"
 	@echo "  PIPELINE_REPO_URL=$(if $(PIPELINE_REPO_URL),$(PIPELINE_REPO_URL),<auto repo-a>)"
+	@echo "  PROD_PIPELINE_REPO_URL=$(if $(PROD_PIPELINE_REPO_URL),$(PROD_PIPELINE_REPO_URL),<default gitea /myuser/jenkins-example>)"
+	@echo "  DEV_PIPELINE_REPO_URL=$(if $(DEV_PIPELINE_REPO_URL),$(DEV_PIPELINE_REPO_URL),<default gitea /myuser/jenkins-example>)"
+	@echo "  PROD_PIPELINE_GIT_CREDENTIALS_ID=$(if $(PROD_PIPELINE_GIT_CREDENTIALS_ID),$(PROD_PIPELINE_GIT_CREDENTIALS_ID),<auto pipeline-git-prod when user/password available>)"
+	@echo "  PROD_PIPELINE_GIT_USERNAME=$(if $(PROD_PIPELINE_GIT_USERNAME),$(PROD_PIPELINE_GIT_USERNAME),<auto from gitea/runtime/shared/generated.env>)"
+	@echo "  PROD_PIPELINE_GIT_PASSWORD=<hidden>"
+	@echo "  DEV_PIPELINE_GIT_CREDENTIALS_ID=$(if $(DEV_PIPELINE_GIT_CREDENTIALS_ID),$(DEV_PIPELINE_GIT_CREDENTIALS_ID),<auto pipeline-git-dev when user/password available>)"
+	@echo "  DEV_PIPELINE_GIT_USERNAME=$(if $(DEV_PIPELINE_GIT_USERNAME),$(DEV_PIPELINE_GIT_USERNAME),<auto from gitea/runtime/shared/generated.env>)"
+	@echo "  DEV_PIPELINE_GIT_PASSWORD=<hidden>"
 	@echo "  PROD_BRANCH=$(PROD_BRANCH), DEV_BRANCH=$(DEV_BRANCH)"
 	@echo "  PIPELINE_SCRIPT_PATH=$(PIPELINE_SCRIPT_PATH), PIPELINE_JOB_NAME=$(PIPELINE_JOB_NAME)"
 	@echo "  PIPELINE_AUTH_TOKEN=$(PIPELINE_AUTH_TOKEN)"
@@ -115,7 +138,14 @@ docker-up: ensure-vault
 	@set -euo pipefail; \
 	source scripts/lib/env.sh; \
 	ensure_admin_credentials; \
-	repo_url="$$(resolve_pipeline_repo_url docker)"; \
+	prod_repo_url="$$(resolve_instance_pipeline_repo_url docker prod)"; \
+	dev_repo_url="$$(resolve_instance_pipeline_repo_url docker dev)"; \
+	prod_git_credentials_id="$$(resolve_instance_pipeline_git_credentials_id docker prod)"; \
+	prod_git_username="$$(resolve_instance_pipeline_git_username docker prod)"; \
+	prod_git_password="$$(resolve_instance_pipeline_git_password docker prod)"; \
+	dev_git_credentials_id="$$(resolve_instance_pipeline_git_credentials_id docker dev)"; \
+	dev_git_username="$$(resolve_instance_pipeline_git_username docker dev)"; \
+	dev_git_password="$$(resolve_instance_pipeline_git_password docker dev)"; \
 	mkdir -p $(STATE_DIR)/docker/jenkins-prod $(STATE_DIR)/docker/jenkins-dev; \
 	mkdir -p $(STATE_DIR)/docker/jenkins-prod/init.groovy.d $(STATE_DIR)/docker/jenkins-dev/init.groovy.d; \
 	mkdir -p $(STATE_DIR)/docker/jenkins-prod-agent-1 $(STATE_DIR)/docker/jenkins-prod-agent-2; \
@@ -123,12 +153,19 @@ docker-up: ensure-vault
 	mkdir -p $(STATE_DIR)/repo-a; \
 	cp jenkins/controller/init.groovy.d/00-bootstrap.groovy $(STATE_DIR)/docker/jenkins-prod/init.groovy.d/00-bootstrap.groovy; \
 	cp jenkins/controller/init.groovy.d/00-bootstrap.groovy $(STATE_DIR)/docker/jenkins-dev/init.groovy.d/00-bootstrap.groovy; \
-	PIPELINE_REPO_URL="$$repo_url" \
+	PROD_PIPELINE_REPO_URL="$$prod_repo_url" \
+	DEV_PIPELINE_REPO_URL="$$dev_repo_url" \
+	PROD_PIPELINE_GIT_CREDENTIALS_ID="$$prod_git_credentials_id" \
+	PROD_PIPELINE_GIT_USERNAME="$$prod_git_username" \
+	PROD_PIPELINE_GIT_PASSWORD="$$prod_git_password" \
+	DEV_PIPELINE_GIT_CREDENTIALS_ID="$$dev_git_credentials_id" \
+	DEV_PIPELINE_GIT_USERNAME="$$dev_git_username" \
+	DEV_PIPELINE_GIT_PASSWORD="$$dev_git_password" \
 	JENKINS_ADMIN_USER="$$JENKINS_ADMIN_USER" \
 	JENKINS_ADMIN_PASSWORD="$$JENKINS_ADMIN_PASSWORD" \
 	$(COMPOSE_CMD) up -d --build; \
 	print_admin_credentials; \
-	print_pipeline_configuration "$$repo_url"; \
+	print_pipeline_configuration "$$prod_repo_url" "$$dev_repo_url" "$$prod_git_credentials_id" "$$dev_git_credentials_id"; \
 	print_instance_urls; \
 	bash scripts/sync-regular-user-api-tokens.sh
 

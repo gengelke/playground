@@ -10,7 +10,7 @@ DOCKER_COMPOSE ?= docker compose -f docker-compose.yml
 
 export NGINX_HTTP_PORT PROD_HTTP_PORT DEV_HTTP_PORT API_PORT GITEA_HTTP_PORT GITLAB_HTTP_PORT NEXUS_HTTP_PORT VAULT_PORT
 
-.PHONY: help up down restart logs status check-mode
+.PHONY: help up down restart logs status check-mode check-port-conflict
 
 check-mode:
 	@if [[ "$(MODE)" != "docker" && "$(MODE)" != "bare" ]]; then \
@@ -18,7 +18,21 @@ check-mode:
 		exit 1; \
 	fi
 
-up: check-mode
+check-port-conflict:
+	@if [[ "$(MODE)" == "docker" && "$(NGINX_HTTP_PORT)" == "80" ]]; then \
+		traefik_ids="$$(docker ps --filter "name=svclb-traefik" --format '{{.ID}}')"; \
+		if [[ -n "$$traefik_ids" ]]; then \
+			for cid in $$traefik_ids; do \
+				if docker inspect "$$cid" --format '{{json .HostConfig.PortBindings}}' | grep -Eq '"80/tcp":\[[^]]*"HostPort":"80"'; then \
+					echo "Port 80 is already claimed by Kubernetes Traefik (container $$cid)."; \
+					echo "Disable Rancher Desktop Kubernetes/Traefik or set NGINX_HTTP_PORT to a different host port."; \
+					exit 1; \
+				fi; \
+			done; \
+		fi; \
+	fi
+
+up: check-mode check-port-conflict
 	@if [[ "$(MODE)" == "docker" ]]; then \
 		$(DOCKER_COMPOSE) up -d; \
 	else \

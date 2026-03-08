@@ -7,8 +7,11 @@ source "${SCRIPT_DIR}/../lib/env.sh"
 
 ensure_admin_credentials
 print_admin_credentials
-PIPELINE_REPO_URL="$(resolve_pipeline_repo_url bare)"
-print_pipeline_configuration "$PIPELINE_REPO_URL"
+PROD_PIPELINE_REPO_URL="$(resolve_instance_pipeline_repo_url bare prod)"
+DEV_PIPELINE_REPO_URL="$(resolve_instance_pipeline_repo_url bare dev)"
+PROD_PIPELINE_GIT_CREDENTIALS_ID="$(resolve_instance_pipeline_git_credentials_id bare prod)"
+DEV_PIPELINE_GIT_CREDENTIALS_ID="$(resolve_instance_pipeline_git_credentials_id bare dev)"
+print_pipeline_configuration "$PROD_PIPELINE_REPO_URL" "$DEV_PIPELINE_REPO_URL" "$PROD_PIPELINE_GIT_CREDENTIALS_ID" "$DEV_PIPELINE_GIT_CREDENTIALS_ID"
 
 CURL_AUTH_ARGS=()
 if [[ -n "${JENKINS_ADMIN_USER:-}" && -n "${JENKINS_ADMIN_PASSWORD:-}" ]]; then
@@ -17,10 +20,14 @@ fi
 
 start_controller() {
   local instance="$1"
-  local name branch port base_url home_dir logs_dir pid_file log_file
+  local name branch port base_url home_dir logs_dir pid_file log_file repo_url git_credentials_id git_username git_password
 
   name="$(instance_name "$instance")"
   branch="$(instance_branch "$instance")"
+  repo_url="$(resolve_instance_pipeline_repo_url bare "$instance")"
+  git_credentials_id="$(resolve_instance_pipeline_git_credentials_id bare "$instance")"
+  git_username="$(resolve_instance_pipeline_git_username bare "$instance")"
+  git_password="$(resolve_instance_pipeline_git_password bare "$instance")"
   port="$(instance_http_port "$instance")"
   base_url="$(instance_base_url "$instance")"
   home_dir="$(instance_home "$instance")"
@@ -39,7 +46,10 @@ start_controller() {
   (
     export JENKINS_HOME="$home_dir"
     export JENKINS_INSTANCE_NAME="$name"
-    export PIPELINE_REPO_URL="$PIPELINE_REPO_URL"
+    export PIPELINE_REPO_URL="$repo_url"
+    export PIPELINE_GIT_CREDENTIALS_ID="$git_credentials_id"
+    export PIPELINE_GIT_USERNAME="$git_username"
+    export PIPELINE_GIT_PASSWORD="$git_password"
     export PIPELINE_BRANCH="$branch"
     export PIPELINE_SCRIPT_PATH="$PIPELINE_SCRIPT_PATH"
     export PIPELINE_JOB_NAME="$PIPELINE_JOB_NAME"

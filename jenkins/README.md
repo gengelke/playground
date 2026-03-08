@@ -9,7 +9,8 @@ Both instances are configured from the same as-code bootstrap script and differ 
 
 ## Behavior
 
-- One shared Git repo for pipeline sources (`PIPELINE_REPO_URL`)
+- Shared Git repo for pipeline sources (`PIPELINE_REPO_URL`) or per-instance overrides
+  via `PROD_PIPELINE_REPO_URL` and `DEV_PIPELINE_REPO_URL`
 - Separate branch per environment:
   - prod instance reads `PROD_BRANCH` (default `main`)
   - dev instance reads `DEV_BRANCH`
@@ -31,8 +32,9 @@ that prints `hello world` on an attached agent (`label 'linux'`).
 
 Both Jenkins instances automatically create and run a pipeline job from git:
 
-- `jenkins-prod` uses Repo A branch `main`
-- `jenkins-dev` uses Repo A branch `dev`
+- `jenkins-prod` uses `http://host.docker.internal:3000/myuser/jenkins-example` branch `main` by default
+- `jenkins-dev` uses `http://host.docker.internal:3000/myuser/jenkins-example` branch `dev` by default
+- Both instances check out with Jenkins-managed credentials (`pipeline-git-prod` / `pipeline-git-dev`) when available
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
 
 To use your own git repo as Repo A:
@@ -40,6 +42,15 @@ To use your own git repo as Repo A:
 ```bash
 export PIPELINE_REPO_URL=https://github.com/your-org/your-pipeline-repo.git
 export PROD_BRANCH=main
+export DEV_BRANCH=dev
+```
+
+To set a different repo just for `jenkins-dev`:
+
+```bash
+export DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/jenkins-example
+export DEV_PIPELINE_GIT_USERNAME=myuser
+export DEV_PIPELINE_GIT_PASSWORD='<gitea-password>'
 export DEV_BRANCH=dev
 ```
 
@@ -102,6 +113,13 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 ## Tunables
 
 - `PIPELINE_REPO_URL`
+- `PROD_PIPELINE_REPO_URL` (optional override for prod)
+- `DEV_PIPELINE_REPO_URL` (optional override for dev)
+- `PIPELINE_GIT_CREDENTIALS_ID` (shared optional git credentials id)
+- `PIPELINE_GIT_USERNAME` (shared optional git username)
+- `PIPELINE_GIT_PASSWORD` (shared optional git password)
+- `PROD_PIPELINE_GIT_CREDENTIALS_ID` / `PROD_PIPELINE_GIT_USERNAME` / `PROD_PIPELINE_GIT_PASSWORD`
+- `DEV_PIPELINE_GIT_CREDENTIALS_ID` / `DEV_PIPELINE_GIT_USERNAME` / `DEV_PIPELINE_GIT_PASSWORD`
 - `PROD_BRANCH` (default `main`)
 - `DEV_BRANCH`
 - `PIPELINE_SCRIPT_PATH` (default `Jenkinsfile`)
@@ -121,6 +139,18 @@ Example override:
 
 ```bash
 make up MODE=docker PIPELINE_REPO_URL=https://github.com/acme/ci.git PROD_BRANCH=release DEV_BRANCH=develop
+```
+
+Per-instance repo override example:
+
+```bash
+make up MODE=docker \
+  PROD_PIPELINE_REPO_URL=https://github.com/acme/ci.git \
+  DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/jenkins-example \
+  DEV_PIPELINE_GIT_USERNAME=myuser \
+  DEV_PIPELINE_GIT_PASSWORD='<gitea-password>' \
+  PROD_BRANCH=release \
+  DEV_BRANCH=dev
 ```
 
 ## Note

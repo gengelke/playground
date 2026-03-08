@@ -16,6 +16,17 @@ CACHE_DIR="$(to_abs_path "${CACHE_DIR:-${STATE_DIR}/cache}")"
 BARE_STATE_DIR="$(to_abs_path "${BARE_STATE_DIR:-${STATE_DIR}/bare}")"
 
 PIPELINE_REPO_URL="${PIPELINE_REPO_URL:-}"
+PROD_PIPELINE_REPO_URL="${PROD_PIPELINE_REPO_URL:-}"
+DEV_PIPELINE_REPO_URL="${DEV_PIPELINE_REPO_URL:-}"
+PIPELINE_GIT_CREDENTIALS_ID="${PIPELINE_GIT_CREDENTIALS_ID:-}"
+PIPELINE_GIT_USERNAME="${PIPELINE_GIT_USERNAME:-}"
+PIPELINE_GIT_PASSWORD="${PIPELINE_GIT_PASSWORD:-}"
+PROD_PIPELINE_GIT_CREDENTIALS_ID="${PROD_PIPELINE_GIT_CREDENTIALS_ID:-}"
+PROD_PIPELINE_GIT_USERNAME="${PROD_PIPELINE_GIT_USERNAME:-}"
+PROD_PIPELINE_GIT_PASSWORD="${PROD_PIPELINE_GIT_PASSWORD:-}"
+DEV_PIPELINE_GIT_CREDENTIALS_ID="${DEV_PIPELINE_GIT_CREDENTIALS_ID:-}"
+DEV_PIPELINE_GIT_USERNAME="${DEV_PIPELINE_GIT_USERNAME:-}"
+DEV_PIPELINE_GIT_PASSWORD="${DEV_PIPELINE_GIT_PASSWORD:-}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
@@ -39,6 +50,7 @@ EXAMPLE_PIPELINE_REPO_DIR="$(to_abs_path "${EXAMPLE_PIPELINE_REPO_DIR:-${STATE_D
 JENKINS_WAR_URL="${JENKINS_WAR_URL:-https://get.jenkins.io/war-stable/latest/jenkins.war}"
 JENKINS_WAR_PATH="${JENKINS_WAR_PATH:-${CACHE_DIR}/jenkins.war}"
 INIT_GROOVY_DIR="${INIT_GROOVY_DIR:-${ROOT_DIR}/jenkins/controller/init.groovy.d}"
+GITEA_GENERATED_ENV_FILE="${GITEA_GENERATED_ENV_FILE:-${ROOT_DIR}/../gitea/runtime/shared/generated.env}"
 
 JAVA_BIN="${JAVA_BIN:-java}"
 CURL_BIN="${CURL_BIN:-curl}"
@@ -171,9 +183,138 @@ resolve_pipeline_repo_url() {
   esac
 }
 
+resolve_instance_pipeline_repo_url() {
+  local mode="$1"
+  local instance="$2"
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/jenkins-example' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/jenkins-example' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    dev)
+      if [[ -n "${DEV_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/jenkins-example' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/jenkins-example' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+read_env_file_value() {
+  local file_path="$1"
+  local key="$2"
+
+  [[ -f "$file_path" ]] || return 1
+  grep -E "^${key}=" "$file_path" | tail -n1 | cut -d= -f2-
+}
+
+resolve_instance_pipeline_git_username() {
+  local mode="$1"
+  local instance="$2"
+  local _unused_mode="$mode"
+  local value=""
+
+  case "$instance" in
+    prod) value="${PROD_PIPELINE_GIT_USERNAME:-${PIPELINE_GIT_USERNAME:-}}" ;;
+    dev) value="${DEV_PIPELINE_GIT_USERNAME:-${PIPELINE_GIT_USERNAME:-}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  if [[ -z "$value" && ( "$instance" == "dev" || "$instance" == "prod" ) ]]; then
+    value="$(read_env_file_value "$GITEA_GENERATED_ENV_FILE" "GITEA_USER" 2>/dev/null || true)"
+  fi
+
+  printf '%s' "$value"
+}
+
+resolve_instance_pipeline_git_password() {
+  local mode="$1"
+  local instance="$2"
+  local _unused_mode="$mode"
+  local value=""
+
+  case "$instance" in
+    prod) value="${PROD_PIPELINE_GIT_PASSWORD:-${PIPELINE_GIT_PASSWORD:-}}" ;;
+    dev) value="${DEV_PIPELINE_GIT_PASSWORD:-${PIPELINE_GIT_PASSWORD:-}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  if [[ -z "$value" && ( "$instance" == "dev" || "$instance" == "prod" ) ]]; then
+    value="$(read_env_file_value "$GITEA_GENERATED_ENV_FILE" "GITEA_USER_PASSWORD" 2>/dev/null || true)"
+  fi
+
+  printf '%s' "$value"
+}
+
+resolve_instance_pipeline_git_credentials_id() {
+  local mode="$1"
+  local instance="$2"
+  local value username password
+
+  case "$instance" in
+    prod) value="${PROD_PIPELINE_GIT_CREDENTIALS_ID:-${PIPELINE_GIT_CREDENTIALS_ID:-}}" ;;
+    dev) value="${DEV_PIPELINE_GIT_CREDENTIALS_ID:-${PIPELINE_GIT_CREDENTIALS_ID:-}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  if [[ -n "$value" ]]; then
+    printf '%s' "$value"
+    return
+  fi
+
+  username="$(resolve_instance_pipeline_git_username "$mode" "$instance")"
+  password="$(resolve_instance_pipeline_git_password "$mode" "$instance")"
+  if [[ -n "$username" && -n "$password" ]]; then
+    printf 'pipeline-git-%s' "$instance"
+    return
+  fi
+
+  printf ''
+}
+
 print_pipeline_configuration() {
-  local repo_url="$1"
-  echo "Pipeline source repository (Repo A): ${repo_url}"
+  local prod_repo_url="$1"
+  local dev_repo_url="$2"
+  local prod_credentials_id="$3"
+  local dev_credentials_id="$4"
+  echo "Pipeline source repository (prod): ${prod_repo_url}"
+  echo "Pipeline source repository (dev):  ${dev_repo_url}"
+  echo "Pipeline git credentials id (prod): ${prod_credentials_id:-<none>}"
+  echo "Pipeline git credentials id (dev):  ${dev_credentials_id:-<none>}"
   echo "Pipeline branches: prod=${PROD_BRANCH}, dev=${DEV_BRANCH}"
   echo "Pipeline job name: ${PIPELINE_JOB_NAME}"
   echo "Pipeline script path: ${PIPELINE_SCRIPT_PATH}"

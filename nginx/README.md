@@ -17,6 +17,8 @@ make down MODE=docker
 
 `MODE=bare` is intentionally a no-op for this service.
 
+If `NGINX_HTTP_PORT=80`, startup now fails fast when Rancher Desktop Kubernetes Traefik (`svclb-traefik`) is already bound to host port `80`.
+
 ## Hostnames
 
 Add these entries to `/etc/hosts`:
