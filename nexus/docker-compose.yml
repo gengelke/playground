@@ -1,0 +1,14 @@
+services:
+  nexus:
+    image: sonatype/nexus3:latest
+    container_name: nexus-oss
+    restart: unless-stopped
+    ports:
+      - "${NEXUS_HTTP_PORT:-8083}:8081"
+    environment:
+      INSTALL4J_ADD_VM_PARAMS: >-
+        -Xms1200m -Xmx1200m
+        -XX:MaxDirectMemorySize=2g
+        -Djava.util.prefs.userRoot=/nexus-data/javaprefs
+    volumes:
+      - ./data/docker-data:/nexus-data

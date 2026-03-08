@@ -1,0 +1,40 @@
+name: gitea-local
+
+services:
+  gitea:
+    image: docker.io/gitea/gitea:1.24.7
+    restart: unless-stopped
+    ports:
+      - "${GITEA_HTTP_PORT:-3000}:3000"
+      - "${GITEA_SSH_PORT:-2222}:22"
+    volumes:
+      - ./runtime/docker/gitea:/data
+      - ./runtime/docker/config/app.ini:/data/gitea/conf/app.ini
+
+  runner1:
+    image: docker.io/gitea/act_runner:latest
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: "${GITEA_RUNNER_TOKEN:-local-runner-token-change-me}"
+      GITEA_RUNNER_NAME: "${RUNNER1_NAME:-agent-runner-1}"
+      GITEA_RUNNER_LABELS: "${RUNNER_LABELS_DOCKER:-linux-amd64:docker://node:20-bookworm}"
+    volumes:
+      - ./runtime/docker/runner1:/data
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  runner2:
+    image: docker.io/gitea/act_runner:latest
+    restart: unless-stopped
+    depends_on:
+      - gitea
+    environment:
+      GITEA_INSTANCE_URL: http://gitea:3000
+      GITEA_RUNNER_REGISTRATION_TOKEN: "${GITEA_RUNNER_TOKEN:-local-runner-token-change-me}"
+      GITEA_RUNNER_NAME: "${RUNNER2_NAME:-agent-runner-2}"
+      GITEA_RUNNER_LABELS: "${RUNNER_LABELS_DOCKER:-linux-amd64:docker://node:20-bookworm}"
+    volumes:
+      - ./runtime/docker/runner2:/data
+      - /var/run/docker.sock:/var/run/docker.sock

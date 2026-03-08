@@ -2,6 +2,11 @@
 # Configuration
 # ==========================================
 
+MAKEFILE_DIR   := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+PORTS_FILE     ?= $(abspath $(MAKEFILE_DIR)/../ports.env)
+-include $(PORTS_FILE)
+
+VAULT_DIR      ?= $(abspath $(MAKEFILE_DIR)/../vault)
 VENV           := .venv
 PIP            := $(VENV)/bin/pip
 PYTHON         := $(VENV)/bin/python3
@@ -9,10 +14,15 @@ PYTEST         := $(VENV)/bin/pytest
 UVICORN        := $(VENV)/bin/uvicorn
 EMPLOYEECLI    := $(VENV)/bin/employee-cli
 PID_FILE       := .fastapi.pid
-API_URL        ?= http://127.0.0.1:8000
+API_PORT       ?= 8000
+API_URL        ?= http://127.0.0.1:$(API_PORT)
+GRAPHQL_API_URL ?= $(API_URL)/graphql
 DEPS_STAMP     := $(VENV)/.deps-installed
 DOCKER_COMPOSE ?= docker compose
 MODE           ?= bare
+VAULT_ADDR     ?= http://127.0.0.1:8200
+
+export API_PORT
 
 .PHONY: all
 all: workflow
@@ -23,6 +33,17 @@ check-mode:
 		bare|docker) ;; \
 		*) echo "Invalid MODE='$(MODE)'. Use MODE=bare or MODE=docker."; exit 2 ;; \
 	esac
+
+.PHONY: ensure-vault
+ensure-vault: check-mode
+	@set -e; \
+	http_code="$$(curl -s -o /dev/null -w "%{http_code}" "$(VAULT_ADDR)/v1/sys/health" 2>/dev/null || true)"; \
+	if [ -n "$$http_code" ] && [ "$$http_code" != "000" ]; then \
+		echo "Vault reachable at $(VAULT_ADDR) (HTTP $$http_code)"; \
+	else \
+		echo "Vault not reachable at $(VAULT_ADDR); starting $(VAULT_DIR) (MODE=$(MODE))"; \
+		$(MAKE) -C "$(VAULT_DIR)" up MODE="$(MODE)"; \
+	fi
 
 # ==========================================
 # Workflows
@@ -35,11 +56,11 @@ workflow: deps
 	trap '$(MAKE) down MODE=$(MODE)' EXIT; \
 	$(MAKE) codegen MODE=$(MODE); \
 	$(MAKE) install; \
-	PYTHONPATH=. $(PYTEST) -v; \
-	$(PYTHON) example_client.py
+	API_URL="$(GRAPHQL_API_URL)" PYTHONPATH=. $(PYTEST) -v; \
+	API_URL="$(GRAPHQL_API_URL)" $(PYTHON) example_client.py
 
 .PHONY: up down codegen
-up: check-mode _up-$(MODE)
+up: check-mode ensure-vault _up-$(MODE)
 down: check-mode _down-$(MODE)
 codegen: check-mode _codegen-$(MODE)
 
@@ -71,11 +92,11 @@ install: deps
 
 .PHONY: run
 run: deps
-	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port 8000
+	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port $(API_PORT)
 
 .PHONY: run-bg
 run-bg: deps stop
-	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port 8000 > .fastapi.log 2>&1 & echo $$! > $(PID_FILE)
+	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port $(API_PORT) > .fastapi.log 2>&1 & echo $$! > $(PID_FILE)
 	@echo "FastAPI started with PID $$(cat $(PID_FILE))"
 	@for i in $$(seq 1 30); do \
 		if curl -fsS $(API_URL)/docs >/dev/null 2>&1; then \
@@ -132,15 +153,15 @@ test: deps
 	trap '$(MAKE) down MODE=$(MODE)' EXIT; \
 	$(MAKE) codegen MODE=$(MODE); \
 	$(MAKE) install; \
-	PYTHONPATH=. $(PYTEST) -v
+	API_URL="$(GRAPHQL_API_URL)" PYTHONPATH=. $(PYTEST) -v
 
 .PHONY: example
 example: deps
-	$(PYTHON) example_client.py
+	API_URL="$(GRAPHQL_API_URL)" $(PYTHON) example_client.py
 
 .PHONY: cli-list
 cli-list: deps
-	$(EMPLOYEECLI) list
+	API_URL="$(GRAPHQL_API_URL)" $(EMPLOYEECLI) list
 
 # ==========================================
 # Clean

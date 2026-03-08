@@ -1,0 +1,130 @@
+services:
+  jenkins-prod:
+    build:
+      context: ./jenkins/controller
+    container_name: jenkins-prod
+    restart: unless-stopped
+    environment:
+      JENKINS_OPTS: --httpPort=8080 --httpListenAddress=0.0.0.0
+      JENKINS_INSTANCE_NAME: jenkins-prod
+      PIPELINE_REPO_URL: ${PIPELINE_REPO_URL:-}
+      PIPELINE_BRANCH: ${PROD_BRANCH:-main}
+      PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
+      PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
+      PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
+      AGENT_COUNT: ${AGENT_COUNT:-2}
+      AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+      JENKINS_REGULAR_USER: ${JENKINS_REGULAR_USER:-user}
+      JENKINS_REGULAR_PASSWORD: ${JENKINS_REGULAR_PASSWORD:-password}
+    ports:
+      - "${PROD_HTTP_PORT:-8081}:8080"
+    volumes:
+      - ./.state/docker/jenkins-prod:/var/jenkins_home
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    networks:
+      - jenkins-net
+
+  jenkins-dev:
+    build:
+      context: ./jenkins/controller
+    container_name: jenkins-dev
+    restart: unless-stopped
+    environment:
+      JENKINS_OPTS: --httpPort=8080 --httpListenAddress=0.0.0.0
+      JENKINS_INSTANCE_NAME: jenkins-dev
+      PIPELINE_REPO_URL: ${PIPELINE_REPO_URL:-}
+      PIPELINE_BRANCH: ${DEV_BRANCH:-dev}
+      PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
+      PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
+      PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
+      AGENT_COUNT: ${AGENT_COUNT:-2}
+      AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+      JENKINS_REGULAR_USER: ${JENKINS_REGULAR_USER:-user}
+      JENKINS_REGULAR_PASSWORD: ${JENKINS_REGULAR_PASSWORD:-password}
+    ports:
+      - "${DEV_HTTP_PORT:-8082}:8080"
+    volumes:
+      - ./.state/docker/jenkins-dev:/var/jenkins_home
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    networks:
+      - jenkins-net
+
+  jenkins-prod-agent-1:
+    build:
+      context: ./jenkins/agent
+    container_name: jenkins-prod-agent-1
+    restart: unless-stopped
+    environment:
+      JENKINS_URL: http://jenkins-prod:8080/
+      JENKINS_AGENT_NAME: jenkins-prod-agent-1
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+    volumes:
+      - ./.state/docker/jenkins-prod-agent-1:/home/jenkins/agent
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    depends_on:
+      - jenkins-prod
+    networks:
+      - jenkins-net
+
+  jenkins-prod-agent-2:
+    build:
+      context: ./jenkins/agent
+    container_name: jenkins-prod-agent-2
+    restart: unless-stopped
+    environment:
+      JENKINS_URL: http://jenkins-prod:8080/
+      JENKINS_AGENT_NAME: jenkins-prod-agent-2
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+    volumes:
+      - ./.state/docker/jenkins-prod-agent-2:/home/jenkins/agent
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    depends_on:
+      - jenkins-prod
+    networks:
+      - jenkins-net
+
+  jenkins-dev-agent-1:
+    build:
+      context: ./jenkins/agent
+    container_name: jenkins-dev-agent-1
+    restart: unless-stopped
+    environment:
+      JENKINS_URL: http://jenkins-dev:8080/
+      JENKINS_AGENT_NAME: jenkins-dev-agent-1
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+    volumes:
+      - ./.state/docker/jenkins-dev-agent-1:/home/jenkins/agent
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    depends_on:
+      - jenkins-dev
+    networks:
+      - jenkins-net
+
+  jenkins-dev-agent-2:
+    build:
+      context: ./jenkins/agent
+    container_name: jenkins-dev-agent-2
+    restart: unless-stopped
+    environment:
+      JENKINS_URL: http://jenkins-dev:8080/
+      JENKINS_AGENT_NAME: jenkins-dev-agent-2
+      JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
+      JENKINS_ADMIN_PASSWORD: ${JENKINS_ADMIN_PASSWORD:-password}
+    volumes:
+      - ./.state/docker/jenkins-dev-agent-2:/home/jenkins/agent
+      - ./.state/repo-a:/opt/pipeline-repo:ro
+    depends_on:
+      - jenkins-dev
+    networks:
+      - jenkins-net
+
+networks:
+  jenkins-net:
+    name: dual-jenkins-net
