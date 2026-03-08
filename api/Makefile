@@ -48,9 +48,9 @@ workflow: deps
 	API_URL="$(GRAPHQL_API_URL)" $(PYTHON) example_client.py
 
 .PHONY: up down codegen
-up: check-mode ensure-vault _up-$(MODE)
-down: check-mode _down-$(MODE)
-codegen: check-mode _codegen-$(MODE)
+up: check-mode ensure-vault $(MODE)-up
+down: check-mode $(MODE)-down
+codegen: check-mode $(MODE)-codegen
 
 # ==========================================
 # Setup
@@ -112,22 +112,22 @@ stop:
 # Mode implementations
 # ==========================================
 
-.PHONY: _up-bare _down-bare _codegen-bare
-_up-bare: run-bg
+.PHONY: bare-up bare-down bare-codegen
+bare-up: run-bg
 
-_down-bare: stop
+bare-down: stop
 
-_codegen-bare: deps
+bare-codegen: deps
 	bash $(MAKEFILE_DIR)library-builder/generate-client.sh
 
-.PHONY: _up-docker _down-docker _codegen-docker
-_up-docker:
+.PHONY: docker-up docker-down docker-codegen
+docker-up:
 	$(DOCKER_COMPOSE) up --build -d fastapi
 
-_down-docker:
+docker-down:
 	$(DOCKER_COMPOSE) down
 
-_codegen-docker:
+docker-codegen:
 	$(DOCKER_COMPOSE) run --rm codegen
 
 # ==========================================
