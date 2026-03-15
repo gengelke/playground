@@ -14,12 +14,18 @@
 
 ## Services
 
-- `vault`: Local HashiCorp Vault OSS environment with automatic bootstrap/init in docker or bare mode. See [vault/README.md](vault/README.md).
-- `gitea`: Local Gitea SCM instance with two action runners, available in docker or bare mode. See [gitea/README.md](gitea/README.md).
-- `gitlab`: Local GitLab CE setup with two GitLab Runner workers in docker or bare mode. See [gitlab/README.md](gitlab/README.md).
-- `nexus`: Local Sonatype Nexus OSS repository manager with automated first-run initialization. See [nexus/README.md](nexus/README.md).
-- `api`: FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. See [api/README.md](api/README.md).
-- `jenkins`: Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. See [jenkins/README.md](jenkins/README.md).
+- `vault`: Local HashiCorp Vault OSS environment with automatic bootstrap/init in docker or bare mode. <BR>
+See [vault/README.md](vault/README.md).
+- `gitea`: Local Gitea SCM instance with two action runners, available in docker or bare mode. <BR>
+See [gitea/README.md](gitea/README.md).
+- `gitlab`: Local GitLab CE setup with two GitLab Runner workers in docker or bare mode. <BR>
+See [gitlab/README.md](gitlab/README.md).
+- `nexus`: Local Sonatype Nexus OSS repository manager with automated first-run initialization. <BR>
+See [nexus/README.md](nexus/README.md).
+- `api`: FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. <BR>
+See [api/README.md](api/README.md).
+- `jenkins`: Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. <BR>
+See [jenkins/README.md](jenkins/README.md).
 
 ## Top-level orchestration
 
