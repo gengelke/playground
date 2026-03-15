@@ -96,9 +96,9 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - runs `api/example-client/company.py workflow` using the installed package
 - `make up` also ensures a private repository (`add-employee`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
   - checks out the configured add-employee source repo (default `https://github.com/gengelke/playground.git`)
-  - starts the FastAPI service in bare mode
-  - calls `api/example-client/company.py add-employee --employee-name Hans --employee-surname Wurst --employee-role ...`
-  - is meant to be used from Jenkins with a role dropdown backed by the FastAPI `GET /roles` API
+  - uses the configured shared FastAPI instance for both the Jenkins role dropdown and the GraphQL mutation call
+  - calls `api/example-client/company.py add-employee --employee-name ... --employee-surname ... --employee-role ...`
+  - is meant to be used from Jenkins with build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and a role dropdown backed by the FastAPI `GET /roles` API
 - The runner registration token is generated directly from Gitea during bootstrap, persisted in `runtime/shared/generated.env`, and synced to Vault.
 - In bare mode, runners are registered once and persisted under `runtime/bare/runner1` and `runtime/bare/runner2`.
 - Bootstrap values/secrets are persisted in `runtime/shared/generated.env`.

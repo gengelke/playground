@@ -627,7 +627,9 @@ resolve_instance_add_employee_fastapi_roles_url() {
 }
 
 resolve_instance_add_employee_graphql_url() {
-  local instance="$1"
+  local mode="$1"
+  local instance="$2"
+  local roles_url
 
   if [[ -n "${ADD_EMPLOYEE_GRAPHQL_URL}" ]]; then
     printf '%s' "${ADD_EMPLOYEE_GRAPHQL_URL}"
@@ -653,7 +655,12 @@ resolve_instance_add_employee_graphql_url() {
       ;;
   esac
 
-  printf '%s' 'http://127.0.0.1:8000/graphql'
+  roles_url="$(resolve_instance_add_employee_fastapi_roles_url "$mode" "$instance")" || return 1
+  if [[ "$roles_url" == */roles ]]; then
+    printf '%s' "${roles_url%/roles}/graphql"
+  else
+    printf '%s' "${roles_url%/}/graphql"
+  fi
 }
 
 read_env_file_value() {

@@ -41,8 +41,8 @@ Both Jenkins instances automatically create and run a pipeline job from git:
 - The default `jenkins-example` pipeline Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
 - Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), run `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, and upload it to the Nexus PyPI repo `pypi-public`
 - Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py workflow` using that installed package
-- Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, and run `api/example-client/company.py add-employee` for `Hans Wurst`
-- The `add-employee` job gets an Active Choices dropdown parameter named `EMPLOYEE_ROLE` whose values are fetched from the FastAPI `GET /roles` API
+- Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch) and run `api/example-client/company.py add-employee` against the configured shared FastAPI instance
+- The `add-employee` job gets build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and an Active Choices dropdown `EMPLOYEE_ROLE`; the role values are fetched directly from the FastAPI `GET /roles` API by the Jenkins bootstrap configuration, and the job uses that same FastAPI instance for its GraphQL call by default
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
 
 To use your own git repo as Repo A:
@@ -155,7 +155,7 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `PROD_ADD_EMPLOYEE_SOURCE_BRANCH` / `DEV_ADD_EMPLOYEE_SOURCE_BRANCH`
 - `ADD_EMPLOYEE_FASTAPI_ROLES_URL` (shared override for the controller-side role dropdown source; default points to FastAPI `GET /roles`)
 - `PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL` / `DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL`
-- `ADD_EMPLOYEE_GRAPHQL_URL` (shared override used inside the `add-employee` job; default `http://127.0.0.1:8000/graphql`)
+- `ADD_EMPLOYEE_GRAPHQL_URL` (shared override used inside the `add-employee` job; default derived from `ADD_EMPLOYEE_FASTAPI_ROLES_URL`)
 - `PROD_ADD_EMPLOYEE_GRAPHQL_URL` / `DEV_ADD_EMPLOYEE_GRAPHQL_URL`
 - `PROD_BRANCH` (default `main`)
 - `DEV_BRANCH`

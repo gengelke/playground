@@ -190,6 +190,7 @@ def domainClass = optionalClass("com.cloudbees.plugins.credentials.domains.Domai
 def credentialsScopeClass = optionalClass("com.cloudbees.plugins.credentials.CredentialsScope")
 def usernamePasswordCredentialsImplClass = optionalClass("com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl")
 def parametersDefinitionPropertyClass = optionalClass("hudson.model.ParametersDefinitionProperty")
+def stringParameterDefinitionClass = optionalClass("hudson.model.StringParameterDefinition")
 def choiceParameterClass = optionalClass("org.biouno.unochoice.ChoiceParameter")
 def groovyScriptClass = optionalClass("org.biouno.unochoice.model.GroovyScript")
 def secureGroovyScriptClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.SecureGroovyScript")
@@ -199,9 +200,22 @@ def groovyLanguageClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.sc
 
 if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecClass && userRemoteConfigClass) {
   try {
-    def configureAddEmployeeRoleParameter = { pipelineJob, rolesUrl ->
-      if (!(parametersDefinitionPropertyClass && choiceParameterClass && groovyScriptClass && secureGroovyScriptClass && approvalContextClass)) {
-        println("[bootstrap] active choices classes unavailable; skipping dynamic role parameter for ${pipelineJob.name}")
+    def configureAddEmployeeParameters = { pipelineJob, rolesUrl ->
+      if (!(parametersDefinitionPropertyClass && stringParameterDefinitionClass)) {
+        println("[bootstrap] parameter classes unavailable; skipping add-employee parameters for ${pipelineJob.name}")
+        return
+      }
+
+      def parameterDefinitions = [
+        stringParameterDefinitionClass.newInstance("EMPLOYEE_NAME", "Hans", "Employee first name."),
+        stringParameterDefinitionClass.newInstance("EMPLOYEE_SURNAME", "Wurst", "Employee surname.")
+      ]
+
+      if (!(choiceParameterClass && groovyScriptClass && secureGroovyScriptClass && approvalContextClass)) {
+        println("[bootstrap] active choices classes unavailable; configuring only string parameters for ${pipelineJob.name}")
+        pipelineJob.removeProperty(parametersDefinitionPropertyClass)
+        pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance(parameterDefinitions))
+        println("[bootstrap] configured add-employee text parameters for ${pipelineJob.name}")
         return
       }
 
@@ -242,19 +256,20 @@ return roles ?: ['Developer', 'Senior Developer', 'Superhero', 'AvD']
         .newInstance(fallbackScriptText, false, [])
         .configuring(approvalContext)
       def groovyScript = groovyScriptClass.newInstance(parameterScript, fallbackScript)
-      def parameter = choiceParameterClass.newInstance(
+      def roleParameter = choiceParameterClass.newInstance(
         "EMPLOYEE_ROLE",
-        "Select role for Hans Wurst. Values are loaded from the FastAPI /roles API.",
+        "Select the employee role. Values are loaded from the FastAPI /roles API.",
         "${pipelineJob.name}-employee-role".replaceAll("[^A-Za-z0-9._-]", "-"),
         groovyScript,
         "PT_SINGLE_SELECT",
         false,
         1
       )
+      parameterDefinitions << roleParameter
 
       pipelineJob.removeProperty(parametersDefinitionPropertyClass)
-      pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance([parameter]))
-      println("[bootstrap] configured dynamic role parameter for ${pipelineJob.name}")
+      pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance(parameterDefinitions))
+      println("[bootstrap] configured add-employee parameters for ${pipelineJob.name}")
     }
 
     def ensureManagedGitCredentials = { String credentialId, String username, String password, String credentialLabel ->
@@ -367,7 +382,7 @@ Pipeline script path: ${scriptPath}
       )
 
       if (dynamicRoleChoicesUrl?.trim()) {
-        configureAddEmployeeRoleParameter(pipelineJob, dynamicRoleChoicesUrl)
+        configureAddEmployeeParameters(pipelineJob, dynamicRoleChoicesUrl)
       }
 
       if (authToken?.trim()) {

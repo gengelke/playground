@@ -50,7 +50,7 @@ start_controller() {
   add_employee_source_repo_url="$(resolve_instance_add_employee_source_repo_url "$instance")"
   add_employee_source_branch="$(resolve_instance_add_employee_source_branch "$instance")"
   add_employee_fastapi_roles_url="$(resolve_instance_add_employee_fastapi_roles_url bare "$instance")"
-  add_employee_graphql_url="$(resolve_instance_add_employee_graphql_url "$instance")"
+  add_employee_graphql_url="$(resolve_instance_add_employee_graphql_url bare "$instance")"
   port="$(instance_http_port "$instance")"
   base_url="$(instance_base_url "$instance")"
   root_url="$(resolve_instance_root_url "$instance")"

@@ -36,49 +36,66 @@ fi
       }
     }
 
-    stage('Start FastAPI Service') {
-      steps {
-        sh '''#!/usr/bin/env bash
-set -euo pipefail
-
-banner() {
-  printf '\\n========== %s ==========%s' "$1" "\\n"
-}
-
-banner "Start FastAPI In Bare Mode"
-make -C playground/api up MODE=bare
-'''
-      }
-    }
-
     stage('Add Employee') {
       steps {
-        sh '''#!/usr/bin/env bash
+        script {
+          def rolesUrl = (env.ADD_EMPLOYEE_FASTAPI_ROLES_URL ?: '').trim()
+          if (!rolesUrl) {
+            rolesUrl = 'http://host.docker.internal:8000/roles'
+          }
+
+          def graphqlUrl = (env.ADD_EMPLOYEE_GRAPHQL_URL ?: '').trim()
+          if (!graphqlUrl) {
+            graphqlUrl = rolesUrl.endsWith('/roles')
+              ? "${rolesUrl[0..-7]}/graphql"
+              : "${rolesUrl.replaceFirst('/+$', '')}/graphql"
+          }
+
+          withEnv([
+            "EFFECTIVE_ADD_EMPLOYEE_FASTAPI_ROLES_URL=${rolesUrl}",
+            "EFFECTIVE_ADD_EMPLOYEE_GRAPHQL_URL=${graphqlUrl}",
+          ]) {
+            sh '''#!/usr/bin/env bash
 set -euo pipefail
 
 banner() {
   printf '\\n========== %s ==========%s' "$1" "\\n"
 }
 
+employee_name="${EMPLOYEE_NAME:-}"
+employee_surname="${EMPLOYEE_SURNAME:-}"
 employee_role="${EMPLOYEE_ROLE:-}"
-graphql_url="${ADD_EMPLOYEE_GRAPHQL_URL:-http://127.0.0.1:8000/graphql}"
+roles_url="${EFFECTIVE_ADD_EMPLOYEE_FASTAPI_ROLES_URL}"
+graphql_url="${EFFECTIVE_ADD_EMPLOYEE_GRAPHQL_URL}"
 
-banner "Validate Selected Role"
+banner "Validate Build Parameters"
+if [[ -z "$employee_name" ]]; then
+  echo "EMPLOYEE_NAME is required."
+  exit 1
+fi
+if [[ -z "$employee_surname" ]]; then
+  echo "EMPLOYEE_SURNAME is required."
+  exit 1
+fi
 if [[ -z "$employee_role" ]]; then
   echo "EMPLOYEE_ROLE is required."
   exit 1
 fi
+echo "Using employee: ${employee_name} ${employee_surname}"
 echo "Using role: ${employee_role}"
+echo "Using GraphQL endpoint: ${graphql_url}"
 
 banner "Run Example Client"
 cd playground/api
 FORCE_COLOR=1 example-client/company.py \
   --graphql-url "$graphql_url" \
   add-employee \
-  --employee-name Hans \
-  --employee-surname Wurst \
+  --employee-name "$employee_name" \
+  --employee-surname "$employee_surname" \
   --employee-role "$employee_role"
 '''
+          }
+        }
       }
     }
   }
@@ -87,9 +104,6 @@ FORCE_COLOR=1 example-client/company.py \
     always {
       sh '''#!/usr/bin/env bash
 printf "\\n========== Cleanup ==========\n"
-if [[ -d playground/api ]]; then
-  make -C playground/api down MODE=bare >/dev/null 2>&1 || true
-fi
 '''
     }
   }
