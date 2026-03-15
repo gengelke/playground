@@ -16,7 +16,7 @@ BARE_DIR := $(MAKEFILE_DIR)bare
 
 export GITLAB_HTTP_PORT GITLAB_SSH_PORT GITLAB_EXTERNAL_URL
 
-.PHONY: help up down restart status logs docker-up docker-down docker-status docker-logs docker-register-runners bare-up bare-down bare-status bare-logs check-mode ensure-env ensure-vault
+.PHONY: help up down restart status logs clean distclean docker-up docker-down docker-status docker-logs docker-register-runners bare-up bare-down bare-status bare-logs check-mode ensure-env ensure-vault
 
 help:
 	@echo "Usage: make <target> MODE=docker|bare"
@@ -27,6 +27,8 @@ help:
 	@echo "  restart Restart all services"
 	@echo "  status  Show service status"
 	@echo "  logs    Tail logs"
+	@echo "  clean   Stop local services without removing config"
+	@echo "  distclean Stop local services and remove generated .env"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make up MODE=docker"
@@ -99,3 +101,12 @@ bare-status: ensure-env
 
 bare-logs: ensure-env
 	@bash $(BARE_DIR)/logs.sh $(ENV_FILE)
+
+clean:
+	@if [[ -f "$(ENV_FILE)" ]]; then \
+		$(DOCKER_COMPOSE) down >/dev/null 2>&1 || true; \
+	fi
+	@bash $(BARE_DIR)/down.sh >/dev/null 2>&1 || true
+
+distclean: clean
+	@rm -f "$(ENV_FILE)"

@@ -1,0 +1,2 @@
+-r ../fastapi/requirements.txt
+ariadne-codegen==0.16.0

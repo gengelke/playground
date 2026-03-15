@@ -33,7 +33,19 @@ Dependency order:
 
 `vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx`
 
-Individual service `make up` targets also verify Vault health and will auto-start `../vault` in the same `MODE` when Vault is not reachable.
+Vault-dependent services (`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and will reuse the current `MODE`.
+
+## Cleanup
+
+Remove generated service state from the services that persist local artifacts:
+
+```bash
+make distclean
+# alias
+make distclan
+```
+
+That cleanup currently runs `distclean` for `nginx`, `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`. `nginx` participates for consistency, but does not keep local generated state, so its cleanup is effectively a no-op.
 
 ## Central Port Configuration
 

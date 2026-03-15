@@ -1,0 +1,7 @@
+.venv/
+data/
+runtime/
+company.sqlite
+__pycache__/
+*.py[cod]
+.pytest_cache/

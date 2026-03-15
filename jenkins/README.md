@@ -14,6 +14,7 @@ Both instances are configured from the same as-code bootstrap script and differ 
 - Separate branch per environment:
   - prod instance reads `PROD_BRANCH` (default `main`)
   - dev instance reads `DEV_BRANCH`
+- `example-pipeline` is auto-triggered on bootstrap by default; `generate-library` is created but not auto-triggered by default
 - Shared automation via `Makefile`
 - Two runtime modes:
   - Docker (`docker compose`)
@@ -32,7 +33,7 @@ Both Jenkins instances automatically create and run a pipeline job from git:
 - `jenkins-dev` uses `http://host.docker.internal:3000/myuser/jenkins-example` branch `dev` by default
 - Both instances check out with Jenkins-managed credentials (`pipeline-git-prod` / `pipeline-git-dev`) when available
 - The default `jenkins-example` pipeline Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
-- Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that run `make workflow` for `https://github.com/gengelke/playground` and upload built Python artifacts to Nexus PyPI repo `pypi-public` via Vault credentials
+- Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), run `make library-generate MODE=docker` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, upload it to Nexus PyPI repo `pypi-public`, and verify installation from that repository via Vault credentials
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
 
 To use your own git repo as Repo A:
@@ -98,6 +99,7 @@ make down MODE=bare
 - `make restart MODE=docker|bare`
 - `make logs MODE=docker|bare`
 - `make status MODE=docker|bare`
+- `make distclean`
 
 ## Remote Trigger
 
@@ -122,11 +124,17 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `PROD_GENERATE_LIBRARY_PIPELINE_REPO_URL` / `DEV_GENERATE_LIBRARY_PIPELINE_REPO_URL`
 - `GENERATE_LIBRARY_PIPELINE_BRANCH` (shared optional branch override)
 - `PROD_GENERATE_LIBRARY_PIPELINE_BRANCH` / `DEV_GENERATE_LIBRARY_PIPELINE_BRANCH`
+- `GENERATE_LIBRARY_SOURCE_REPO_URL` (shared source checkout override used inside the `generate-library` job)
+- `PROD_GENERATE_LIBRARY_SOURCE_REPO_URL` / `DEV_GENERATE_LIBRARY_SOURCE_REPO_URL`
+- `GENERATE_LIBRARY_SOURCE_BRANCH` (shared source branch override; default matches the generate-library job branch)
+- `PROD_GENERATE_LIBRARY_SOURCE_BRANCH` / `DEV_GENERATE_LIBRARY_SOURCE_BRANCH`
 - `PROD_BRANCH` (default `main`)
 - `DEV_BRANCH`
 - `PIPELINE_SCRIPT_PATH` (default `Jenkinsfile`)
 - `PIPELINE_JOB_NAME` (default `example-pipeline`)
 - `PIPELINE_AUTH_TOKEN` (default `example-pipeline-auth-token`)
+- `PIPELINE_AUTO_TRIGGER` (default `true`)
+- `GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER` (default `false`)
 - `AGENT_COUNT` (default `2`)
 - `AGENT_EXECUTORS` (default `1`)
 - `PROD_HTTP_PORT` (default `8081`)
@@ -157,6 +165,7 @@ make up MODE=docker \
   DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/jenkins-example \
   DEV_PIPELINE_GIT_USERNAME=myuser \
   DEV_PIPELINE_GIT_PASSWORD='<gitea-password>' \
+  DEV_GENERATE_LIBRARY_SOURCE_REPO_URL=https://github.com/acme/playground.git \
   PROD_BRANCH=release \
   DEV_BRANCH=dev
 ```
@@ -164,3 +173,4 @@ make up MODE=docker \
 ## Note
 
 Both Jenkins instances are initialized automatically, including nodes/agents and login setup.
+`make distclean` removes `.state/`.

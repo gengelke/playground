@@ -22,6 +22,7 @@ def pipelineBranch = env.getOrDefault("PIPELINE_BRANCH", "main")
 def pipelineScriptPath = env.getOrDefault("PIPELINE_SCRIPT_PATH", "Jenkinsfile")
 def pipelineJobName = env.getOrDefault("PIPELINE_JOB_NAME", "example-pipeline")
 def pipelineAuthToken = env.getOrDefault("PIPELINE_AUTH_TOKEN", "example-pipeline-auth-token")
+def pipelineAutoTrigger = env.getOrDefault("PIPELINE_AUTO_TRIGGER", "true")
 def pipelineGitCredentialsId = env.getOrDefault("PIPELINE_GIT_CREDENTIALS_ID", "").trim()
 def pipelineGitUsername = env.getOrDefault("PIPELINE_GIT_USERNAME", "").trim()
 def pipelineGitPassword = env.getOrDefault("PIPELINE_GIT_PASSWORD", "")
@@ -30,6 +31,7 @@ def generateLibraryPipelineBranch = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_
 def generateLibraryPipelineScriptPath = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_SCRIPT_PATH", pipelineScriptPath)
 def generateLibraryPipelineJobName = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_JOB_NAME", "generate-library")
 def generateLibraryPipelineAuthToken = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_AUTH_TOKEN", "")
+def generateLibraryPipelineAutoTrigger = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER", "false")
 def generateLibraryPipelineGitCredentialsId = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_GIT_CREDENTIALS_ID", pipelineGitCredentialsId).trim()
 def generateLibraryPipelineGitUsername = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_GIT_USERNAME", pipelineGitUsername).trim()
 def generateLibraryPipelineGitPassword = env.containsKey("GENERATE_LIBRARY_PIPELINE_GIT_PASSWORD") ? env.get("GENERATE_LIBRARY_PIPELINE_GIT_PASSWORD") : pipelineGitPassword
@@ -65,6 +67,28 @@ def stripUserInfo = { String repoUrl ->
 
 def maskUserInfo = { String repoUrl ->
   repoUrl?.replaceFirst("://[^/@]+@", "://****@")
+}
+
+def parseBooleanEnv = { String value, boolean defaultValue ->
+  if (value == null) {
+    return defaultValue
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false
+    default:
+      println("[bootstrap] invalid boolean value '${value}', using default ${defaultValue}")
+      return defaultValue
+  }
 }
 
 if (!adminPassword?.trim()) {
@@ -215,6 +239,7 @@ if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecCl
       def branch = config.branch
       def scriptPath = config.scriptPath
       def authToken = config.authToken
+      def autoTrigger = config.autoTrigger
       def gitCredentialsId = config.gitCredentialsId
       def gitUsername = config.gitUsername
       def gitPassword = config.gitPassword
@@ -286,10 +311,15 @@ Pipeline script path: ${scriptPath}
 
       pipelineJob.save()
 
-      def lastBuild = pipelineJob.getLastBuild()
-      if (!pipelineJob.isBuilding() && (lastBuild == null || lastBuild.getResult() != hudson.model.Result.SUCCESS)) {
-        pipelineJob.scheduleBuild2(0)
-        println("[bootstrap] triggered initial build for ${jobName}")
+      def autoTriggerEnabled = parseBooleanEnv(autoTrigger?.toString(), true)
+      if (autoTriggerEnabled) {
+        def lastBuild = pipelineJob.getLastBuild()
+        if (!pipelineJob.isBuilding() && (lastBuild == null || lastBuild.getResult() != hudson.model.Result.SUCCESS)) {
+          pipelineJob.scheduleBuild2(0)
+          println("[bootstrap] triggered initial build for ${jobName}")
+        }
+      } else {
+        println("[bootstrap] auto trigger disabled for ${jobName}")
       }
     }
 
@@ -299,6 +329,7 @@ Pipeline script path: ${scriptPath}
       branch: pipelineBranch,
       scriptPath: pipelineScriptPath,
       authToken: pipelineAuthToken,
+      autoTrigger: pipelineAutoTrigger,
       gitCredentialsId: pipelineGitCredentialsId,
       gitUsername: pipelineGitUsername,
       gitPassword: pipelineGitPassword
@@ -310,6 +341,7 @@ Pipeline script path: ${scriptPath}
       branch: generateLibraryPipelineBranch,
       scriptPath: generateLibraryPipelineScriptPath,
       authToken: generateLibraryPipelineAuthToken,
+      autoTrigger: generateLibraryPipelineAutoTrigger,
       gitCredentialsId: generateLibraryPipelineGitCredentialsId,
       gitUsername: generateLibraryPipelineGitUsername,
       gitPassword: generateLibraryPipelineGitPassword

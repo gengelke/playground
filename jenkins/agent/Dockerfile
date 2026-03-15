@@ -12,6 +12,8 @@ RUN apt-get update \
       python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-USER jenkins
 COPY start-agent.sh /usr/local/bin/start-agent.sh
+RUN chmod 0755 /usr/local/bin/start-agent.sh
+
+USER jenkins
 ENTRYPOINT ["/usr/local/bin/start-agent.sh"]

@@ -1,0 +1,11 @@
+**/__pycache__/
+**/*.py[cod]
+fastapi/.venv/
+fastapi/data/
+fastapi/runtime/
+fastapi/company.sqlite
+graphql-library/.venv/
+graphql-library/build/
+graphql-library/generated/
+graphql-library/dist/
+example-client/__pycache__/

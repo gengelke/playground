@@ -21,7 +21,7 @@ DOCKER_COMPOSE ?= docker compose -f docker-compose.yml
 
 export NGINX_HTTP_PORT PROD_HTTP_PORT DEV_HTTP_PORT API_PORT GITEA_HTTP_PORT GITLAB_HTTP_PORT NEXUS_HTTP_PORT VAULT_PORT
 
-.PHONY: help up down restart logs status check-mode check-port-conflict
+.PHONY: help up down restart logs status clean distclean check-mode check-port-conflict
 
 check-port-conflict:
 	@if [[ "$(MODE)" == "docker" && "$(NGINX_HTTP_PORT)" == "80" ]]; then \
@@ -67,13 +67,20 @@ status: check-mode
 		echo "nginx reverse proxy is Docker-only; no status in MODE=bare."; \
 	fi
 
+clean:
+	@echo "nginx keeps no local generated artifacts; nothing to clean."
+
+distclean: clean
+
 help:
 	@echo "Usage:"
 	@echo "  make up MODE=docker|bare"
 	@echo "  make down MODE=docker|bare"
 	@echo "  make logs MODE=docker|bare"
 	@echo "  make status MODE=docker|bare"
+	@echo "  make distclean"
 	@echo ""
 	@echo "Notes:"
 	@echo "  - MODE=docker starts the nginx reverse proxy on http://localhost:80"
 	@echo "  - MODE=bare is a no-op for this service"
+	@echo "  - distclean is a no-op because nginx keeps no local generated state"

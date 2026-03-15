@@ -11,11 +11,11 @@ START_ORDER := $(SERVICES)
 STOP_ORDER := nginx jenkins api nexus gitlab gitea vault
 DEVOPS_ORDER := vault nexus gitea jenkins
 DEVOPS_STOP_ORDER := jenkins gitea nexus vault
-DISTCLEAN_ORDER := jenkins gitea nexus vault
+DISTCLEAN_ORDER := nginx jenkins api nexus gitlab gitea vault
 
 .PHONY: help all up down start stop restart status \
 	devops devops-up devops-down devops-stop \
-	distclean \
+	distclean distclan \
 	$(SERVICES:%=up-%) \
 	$(SERVICES:%=down-%) \
 	$(SERVICES:%=status-%) \
@@ -33,6 +33,7 @@ help:
 	@echo "  make devops MODE=docker|bare   # start vault,nexus,gitea,jenkins"
 	@echo "  make devops-down MODE=docker|bare # stop jenkins,gitea,nexus,vault"
 	@echo "  make distclean                 # remove generated deployment artifacts"
+	@echo "  make distclan                  # alias for distclean"
 	@echo "  make status                    # show status for all services"
 	@echo ""
 	@echo "Per-service:"
@@ -79,6 +80,8 @@ distclean:
 		echo "==> distclean $$svc"; \
 		$(MAKE) -C "$$svc" distclean; \
 	done
+
+distclan: distclean
 
 up:
 	@set -euo pipefail; \

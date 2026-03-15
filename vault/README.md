@@ -24,6 +24,7 @@ make logs MODE=bare
 make restart MODE=docker
 make creds
 make clean
+make distclean
 ```
 
 ## Vault Address
@@ -72,3 +73,4 @@ make creds
 - `scripts/bootstrap-vault.sh`: auto init/unseal flow
 - `scripts/kv-put.sh`: helper for other services to sync generated credentials into Vault KV
 - `.vault/`: runtime data/logs/pid (gitignored)
+- `make distclean`: same cleanup as `make clean`, removing `.vault/`

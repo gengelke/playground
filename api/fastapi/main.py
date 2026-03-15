@@ -6,52 +6,66 @@ from pydantic import BaseModel
 import os
 import sqlite3
 from pathlib import Path
+from threading import Lock
 
 import strawberry
 from strawberry.fastapi import GraphQLRouter
 
 
-# Prefer mounted Docker path if available; otherwise use repo-local sqlite path.
-default_db_path = Path("/data/company.sqlite") if Path("/data").exists() else Path(__file__).resolve().parent.parent / "company.sqlite"
+# Prefer mounted Docker path if available; otherwise keep the sqlite file in fastapi/.
+default_db_path = Path("/data/company.sqlite") if Path("/data").exists() else Path(__file__).resolve().parent / "company.sqlite"
 DATABASE = os.getenv("DATABASE_PATH", str(default_db_path))
+DATABASE_INIT_LOCK = Lock()
+DATABASE_INITIALIZED = False
 
 
 # =====================================================
 # DATABASE LAYER (CENTRALIZED)
 # =====================================================
 
-@contextmanager
-def get_connection():
+def open_connection():
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
+    return connection
+
+
+def initialize_database() -> None:
+    global DATABASE_INITIALIZED
+    if DATABASE_INITIALIZED:
+        return
+
+    with DATABASE_INIT_LOCK:
+        if DATABASE_INITIALIZED:
+            return
+
+        with open_connection() as conn:
+            conn.execute("""
+            CREATE TABLE IF NOT EXISTS employees (
+                employee_id INTEGER PRIMARY KEY,
+                name TEXT,
+                surname TEXT,
+                description TEXT
+            )
+            """)
+            result = conn.execute("SELECT COUNT(*) as count FROM employees").fetchone()
+            if result["count"] == 0:
+                conn.execute("""
+                INSERT INTO employees (employee_id, name, surname, description)
+                VALUES (?, ?, ?, ?)
+                """, (1, "Flash", "Gordon", "Superhero"))
+            conn.commit()
+
+        DATABASE_INITIALIZED = True
+
+
+@contextmanager
+def get_connection():
+    initialize_database()
+    connection = open_connection()
     try:
         yield connection
     finally:
         connection.close()
-
-
-def create_table():
-    with get_connection() as conn:
-        conn.execute("""
-        CREATE TABLE IF NOT EXISTS employees (
-            employee_id INTEGER PRIMARY KEY,
-            name TEXT,
-            surname TEXT,
-            description TEXT
-        )
-        """)
-        conn.commit()
-
-
-def seed_initial_data():
-    with get_connection() as conn:
-        result = conn.execute("SELECT COUNT(*) as count FROM employees").fetchone()
-        if result["count"] == 0:
-            conn.execute("""
-            INSERT INTO employees (employee_id, name, surname, description)
-            VALUES (?, ?, ?, ?)
-            """, (1, "Flash", "Gordon", "Superhero"))
-            conn.commit()
 
 
 def get_employees_db():
@@ -104,8 +118,7 @@ def delete_employee_db(employee_id) -> int:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    create_table()
-    seed_initial_data()
+    initialize_database()
     yield
 
 

@@ -33,11 +33,19 @@ DEV_GENERATE_LIBRARY_PIPELINE_REPO_URL="${DEV_GENERATE_LIBRARY_PIPELINE_REPO_URL
 GENERATE_LIBRARY_PIPELINE_BRANCH="${GENERATE_LIBRARY_PIPELINE_BRANCH:-}"
 PROD_GENERATE_LIBRARY_PIPELINE_BRANCH="${PROD_GENERATE_LIBRARY_PIPELINE_BRANCH:-}"
 DEV_GENERATE_LIBRARY_PIPELINE_BRANCH="${DEV_GENERATE_LIBRARY_PIPELINE_BRANCH:-}"
+GENERATE_LIBRARY_SOURCE_REPO_URL="${GENERATE_LIBRARY_SOURCE_REPO_URL:-}"
+PROD_GENERATE_LIBRARY_SOURCE_REPO_URL="${PROD_GENERATE_LIBRARY_SOURCE_REPO_URL:-}"
+DEV_GENERATE_LIBRARY_SOURCE_REPO_URL="${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL:-}"
+GENERATE_LIBRARY_SOURCE_BRANCH="${GENERATE_LIBRARY_SOURCE_BRANCH:-}"
+PROD_GENERATE_LIBRARY_SOURCE_BRANCH="${PROD_GENERATE_LIBRARY_SOURCE_BRANCH:-}"
+DEV_GENERATE_LIBRARY_SOURCE_BRANCH="${DEV_GENERATE_LIBRARY_SOURCE_BRANCH:-}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
 PIPELINE_JOB_NAME="${PIPELINE_JOB_NAME:-example-pipeline}"
 PIPELINE_AUTH_TOKEN="${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}"
+PIPELINE_AUTO_TRIGGER="${PIPELINE_AUTO_TRIGGER:-true}"
+GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER="${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}"
 
 AGENT_COUNT="${AGENT_COUNT:-2}"
 AGENT_EXECUTORS="${AGENT_EXECUTORS:-1}"
@@ -60,7 +68,7 @@ ADMIN_PASSWORD_GENERATED=0
 
 JENKINS_WAR_URL="${JENKINS_WAR_URL:-https://get.jenkins.io/war-stable/latest/jenkins.war}"
 JENKINS_WAR_PATH="${JENKINS_WAR_PATH:-${CACHE_DIR}/jenkins.war}"
-INIT_GROOVY_DIR="${INIT_GROOVY_DIR:-${ROOT_DIR}/jenkins/controller/init.groovy.d}"
+INIT_GROOVY_DIR="${INIT_GROOVY_DIR:-${ROOT_DIR}/controller/init.groovy.d}"
 GITEA_GENERATED_ENV_FILE="${GITEA_GENERATED_ENV_FILE:-${ROOT_DIR}/../gitea/runtime/shared/generated.env}"
 VAULT_CREDS_FILE="${VAULT_CREDS_FILE:-${ROOT_DIR}/../vault/.vault/credentials.env}"
 
@@ -231,6 +239,66 @@ resolve_instance_generate_library_pipeline_branch() {
       return 1
       ;;
   esac
+}
+
+resolve_instance_generate_library_source_repo_url() {
+  local instance="$1"
+
+  if [[ -n "${GENERATE_LIBRARY_SOURCE_REPO_URL}" ]]; then
+    printf '%s' "${GENERATE_LIBRARY_SOURCE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_GENERATE_LIBRARY_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_GENERATE_LIBRARY_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' 'https://github.com/gengelke/playground.git'
+}
+
+resolve_instance_generate_library_source_branch() {
+  local instance="$1"
+
+  if [[ -n "${GENERATE_LIBRARY_SOURCE_BRANCH}" ]]; then
+    printf '%s' "${GENERATE_LIBRARY_SOURCE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_GENERATE_LIBRARY_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${PROD_GENERATE_LIBRARY_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_GENERATE_LIBRARY_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${DEV_GENERATE_LIBRARY_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  resolve_instance_generate_library_pipeline_branch "$instance"
 }
 
 read_env_file_value() {

@@ -57,6 +57,7 @@ secrets.json
 # =========================
 # SQLite / local data
 # =========================
+*.sqlite
 *.db
 *.sqlite3
 
@@ -64,6 +65,28 @@ secrets.json
 # Docker
 # =========================
 docker-compose.override.yml
+
+# =========================
+# Service runtime state
+# =========================
+api/fastapi/.venv/
+api/fastapi/data/
+api/fastapi/runtime/
+api/fastapi/company.sqlite
+api/graphql-library/.venv/
+api/graphql-library/build/
+api/graphql-library/generated/
+api/graphql-library/dist/
+api/graphql-library/*.egg-info/
+gitea/runtime/
+gitea/.gitea/
+gitlab/.env
+jenkins/.state/
+nexus/.local/
+nexus/data/
+nexus/logs/
+nexus/run/
+vault/.vault/
 
 # =========================
 # Node (schema downloader)

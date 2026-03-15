@@ -1,0 +1,12 @@
+services:
+  fastapi:
+    build:
+      context: .
+    container_name: playground-fastapi
+    environment:
+      DATABASE_PATH: /data/company.sqlite
+    ports:
+      - "${API_PORT:-8000}:8000"
+    restart: unless-stopped
+    volumes:
+      - ./data:/data

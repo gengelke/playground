@@ -1,197 +1,136 @@
-# ==========================================
-# Configuration
-# ==========================================
+SHELL := /usr/bin/env bash
+.DEFAULT_GOAL := help
 
-MAKEFILE_DIR   := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
-PORTS_FILE     ?= $(abspath $(MAKEFILE_DIR)/../ports.env)
--include $(PORTS_FILE)
-include $(MAKEFILE_DIR)/../scripts/lib/common.mk
-
-VAULT_DIR      ?= $(abspath $(MAKEFILE_DIR)/../vault)
-VENV           := .venv
-PIP            := $(VENV)/bin/pip
-PYTHON         := $(VENV)/bin/python3
-PYTEST         := $(VENV)/bin/pytest
-UVICORN        := $(VENV)/bin/uvicorn
-EMPLOYEECLI    := $(VENV)/bin/employee-cli
-PID_FILE       := .fastapi.pid
-API_PORT       ?= 8000
-API_URL        ?= http://127.0.0.1:$(API_PORT)
-GRAPHQL_API_URL ?= $(API_URL)/graphql
-DEPS_STAMP     := $(VENV)/.deps-installed
-DOCKER_COMPOSE ?= docker compose
-MODE           ?= bare
-VAULT_ADDR     ?= http://127.0.0.1:8200
-
-export API_PORT
-
-.PHONY: all
-all: workflow
-
-.PHONY: ensure-vault
-ensure-vault: check-mode
-	@VAULT_ADDR="$(VAULT_ADDR)" VAULT_DIR="$(VAULT_DIR)" MODE="$(MODE)" \
-		bash "$(MAKEFILE_DIR)/../scripts/lib/vault-check.sh"
-
-# ==========================================
-# Workflows
-# ==========================================
-
-.PHONY: workflow
-workflow: deps
-	@set -e; \
-	$(MAKE) up MODE=$(MODE); \
-	trap '$(MAKE) down MODE=$(MODE)' EXIT; \
-	$(MAKE) codegen MODE=$(MODE); \
-	$(MAKE) install; \
-	API_URL="$(GRAPHQL_API_URL)" PYTHONPATH=. $(PYTEST) -v; \
-	API_URL="$(GRAPHQL_API_URL)" $(PYTHON) example_client.py
-
-.PHONY: up down codegen
-up: check-mode ensure-vault $(MODE)-up
-down: check-mode $(MODE)-down
-codegen: check-mode $(MODE)-codegen
-
-# ==========================================
-# Setup
-# ==========================================
-
-.PHONY: venv
-venv:
-	@if [ ! -x "$(PIP)" ] || ! "$(PIP)" --version >/dev/null 2>&1; then rm -rf "$(VENV)"; python3 -m venv "$(VENV)"; fi
-
-$(DEPS_STAMP): | venv
-	$(PIP) install --upgrade pip
-	$(PIP) install "setuptools>=61" wheel
-	$(PIP) install pydantic httpx fastapi uvicorn strawberry-graphql
-	$(PIP) install pytest pytest-asyncio ariadne-codegen
-	touch $(DEPS_STAMP)
-
-.PHONY: deps
-deps: $(DEPS_STAMP)
-
-.PHONY: install
-install: deps
-	$(PIP) install -e . --no-build-isolation
-
-# ==========================================
-# Run FastAPI (bare)
-# ==========================================
-
-.PHONY: run
-run: deps
-	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port $(API_PORT)
-
-.PHONY: run-bg
-run-bg: deps stop
-	$(UVICORN) --app-dir fastapi main:app --host 127.0.0.1 --port $(API_PORT) > .fastapi.log 2>&1 & echo $$! > $(PID_FILE)
-	@echo "FastAPI started with PID $$(cat $(PID_FILE))"
-	@for i in $$(seq 1 30); do \
-		if curl -fsS $(API_URL)/docs >/dev/null 2>&1; then \
-			echo "FastAPI is ready at $(API_URL)"; \
-			exit 0; \
+MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+FASTAPI_DIR := $(MAKEFILE_DIR)fastapi
+GRAPHQL_LIBRARY_DIR := $(MAKEFILE_DIR)graphql-library
+EXAMPLE_CLIENT_DIR := $(MAKEFILE_DIR)example-client
+MODE ?= docker
+LIBRARY_SCHEMA_SOURCE ?= $(if $(filter docker,$(MODE)),remote,local)
+LIBRARY_REMOTE_SCHEMA_URL ?= $(if $(filter docker,$(MODE)),http://host.docker.internal:8000/graphql,http://127.0.0.1:8000/graphql)
+RUN_GRAPHQL_URL ?= http://127.0.0.1:8000/graphql
+RUN_GRAPHQL_URL_DOCKER ?= $(subst http://localhost,http://host.docker.internal,$(subst http://127.0.0.1,http://host.docker.internal,$(RUN_GRAPHQL_URL)))
+EMPLOYEE_ID ?=
+EMPLOYEE_NAME ?=
+EMPLOYEE_SURNAME ?=
+EMPLOYEE_DESCRIPTION ?=
+UPDATED_EMPLOYEE_NAME ?=
+UPDATED_EMPLOYEE_SURNAME ?=
+UPDATED_EMPLOYEE_DESCRIPTION ?=
+SANITIZE_TLS_ENV = \
+	for cert_var in SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE PIP_CERT; do \
+		cert_path="$${!cert_var:-}"; \
+		if [[ -n "$$cert_path" && ! -f "$$cert_path" ]]; then \
+			echo "Ignoring invalid $$cert_var=$$cert_path" >&2; \
+			unset "$$cert_var"; \
 		fi; \
-		sleep 1; \
-	done; \
-	echo "FastAPI did not become ready in time."; \
-	$(MAKE) stop; \
-	exit 1
+	done;
 
-.PHONY: stop
-stop:
-	@if [ -f "$(PID_FILE)" ]; then \
-		PID=$$(cat $(PID_FILE)); \
-		if kill -0 $$PID >/dev/null 2>&1; then \
-			kill $$PID; \
-			echo "Stopped FastAPI (PID $$PID)"; \
-		fi; \
-		rm -f $(PID_FILE); \
-	fi
+.PHONY: help build up down restart logs status run clean distclean \
+	fastapi-run \
+	library-help library-deps library-generate library-clean library-distclean
 
-# ==========================================
-# Mode implementations
-# ==========================================
-
-.PHONY: bare-up bare-down bare-codegen
-bare-up: run-bg
-
-bare-down: stop
-
-bare-codegen: deps
-	bash $(MAKEFILE_DIR)library-builder/generate-client.sh
-
-.PHONY: docker-up docker-down docker-codegen
-docker-up:
-	$(DOCKER_COMPOSE) up --build -d fastapi
-
-docker-down:
-	$(DOCKER_COMPOSE) down
-
-docker-codegen:
-	$(DOCKER_COMPOSE) run --rm codegen
-
-# ==========================================
-# Test, example, CLI
-# ==========================================
-
-.PHONY: test
-test: deps
-	@set -e; \
-	$(MAKE) up MODE=$(MODE); \
-	trap '$(MAKE) down MODE=$(MODE)' EXIT; \
-	$(MAKE) codegen MODE=$(MODE); \
-	$(MAKE) install; \
-	API_URL="$(GRAPHQL_API_URL)" PYTHONPATH=. $(PYTEST) -v
-
-.PHONY: example
-example: deps
-	API_URL="$(GRAPHQL_API_URL)" $(PYTHON) example_client.py
-
-.PHONY: cli-list
-cli-list: deps
-	API_URL="$(GRAPHQL_API_URL)" $(EMPLOYEECLI) list
-
-# ==========================================
-# Clean
-# ==========================================
-
-.PHONY: clean
-clean: check-mode
-	$(MAKE) down MODE=$(MODE)
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f \( -name "*.pyc" -o -name "*.pyo" -o -name "*.un~" \) -delete
-	rm -rf generated_client dist *.egg-info .pytest_cache .mypy_cache htmlcov
-	rm -f .fastapi.log .coverage $(DEPS_STAMP) schema.graphql schema.json
-
-.PHONY: distclean
-distclean: clean
-	rm -rf $(VENV)
-	rm -f *.sqlite *.db
-
-# ==========================================
-# Help
-# ==========================================
-
-.PHONY: help
 help:
-	@echo ""
-	@echo "Mode-driven lifecycle (MODE=bare|docker, default bare):"
-	@echo "  make up MODE=bare|docker       start API"
-	@echo "  make codegen MODE=bare|docker  regenerate GraphQL client"
-	@echo "  make down MODE=bare|docker     stop API/services"
-	@echo "  make workflow MODE=bare|docker full workflow: up, codegen, test, example"
-	@echo "  make test MODE=bare|docker     run pytest (manages lifecycle automatically)"
-	@echo ""
-	@echo "Bare-mode helpers:"
-	@echo "  make run            start FastAPI in foreground (bare only)"
-	@echo "  make run-bg         start FastAPI in background (bare only)"
-	@echo "  make stop           stop background FastAPI (bare only)"
-	@echo "  make example        run example client"
-	@echo "  make cli-list       list employees via CLI"
-	@echo ""
-	@echo "Cleanup (mode aware):"
-	@echo "  make clean MODE=bare|docker"
-	@echo "  make distclean MODE=bare|docker"
-	@echo ""
-	@echo "Legacy default:"
-	@echo "  make                same as make workflow MODE=bare"
+	@printf "%s\n" \
+		"FastAPI service:" \
+		"  make build MODE=docker|bare" \
+		"  make up MODE=docker|bare" \
+		"  make down MODE=docker|bare" \
+		"  make logs MODE=docker|bare" \
+		"  make status MODE=docker|bare" \
+		"  make fastapi-run" \
+		"" \
+		"GraphQL client library:" \
+		"  make library-generate MODE=docker|bare [LIBRARY_SCHEMA_SOURCE=local|remote]" \
+		"  make library-deps MODE=docker|bare" \
+		"  make library-clean MODE=docker|bare" \
+		"  make library-distclean MODE=docker|bare" \
+		"" \
+		"End-to-end example:" \
+		"  make run MODE=docker|bare [EMPLOYEE_ID=12345] [EMPLOYEE_NAME=...] [EMPLOYEE_SURNAME=...]" \
+		"           [EMPLOYEE_DESCRIPTION=...] [UPDATED_EMPLOYEE_NAME=...]" \
+		"           [UPDATED_EMPLOYEE_SURNAME=...] [UPDATED_EMPLOYEE_DESCRIPTION=...]" \
+		"" \
+		"Library variables:" \
+		"  MODE=$(MODE)" \
+		"  LIBRARY_SCHEMA_SOURCE=$(LIBRARY_SCHEMA_SOURCE)" \
+		"  LIBRARY_REMOTE_SCHEMA_URL=$(LIBRARY_REMOTE_SCHEMA_URL)" \
+		"" \
+		"Run variables:" \
+		"  RUN_GRAPHQL_URL=$(RUN_GRAPHQL_URL)" \
+		"  RUN_GRAPHQL_URL_DOCKER=$(RUN_GRAPHQL_URL_DOCKER)" \
+		"  EMPLOYEE_ID=$(EMPLOYEE_ID)" \
+		"  EMPLOYEE_NAME=$(EMPLOYEE_NAME)" \
+		"  EMPLOYEE_SURNAME=$(EMPLOYEE_SURNAME)" \
+		"  EMPLOYEE_DESCRIPTION=$(EMPLOYEE_DESCRIPTION)" \
+		"  UPDATED_EMPLOYEE_NAME=$(UPDATED_EMPLOYEE_NAME)" \
+		"  UPDATED_EMPLOYEE_SURNAME=$(UPDATED_EMPLOYEE_SURNAME)" \
+		"  UPDATED_EMPLOYEE_DESCRIPTION=$(UPDATED_EMPLOYEE_DESCRIPTION)"
+
+build up down restart logs status clean:
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(FASTAPI_DIR)" $@ MODE="$(MODE)"
+
+fastapi-run:
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(FASTAPI_DIR)" run MODE="bare"
+
+run:
+	@$(SANITIZE_TLS_ENV) \
+	if [[ "$(MODE)" == "bare" ]]; then \
+		needs_library=0; \
+		if [[ ! -x "$(GRAPHQL_LIBRARY_DIR)/.venv/bin/python" ]]; then \
+			needs_library=1; \
+		fi; \
+		if [[ ! -d "$(GRAPHQL_LIBRARY_DIR)/generated/fastapi_graphql_client" ]]; then \
+			needs_library=1; \
+		fi; \
+		if [[ "$$needs_library" == "1" ]]; then \
+			$(MAKE) library-generate MODE=bare; \
+		fi; \
+	elif [[ ! -d "$(GRAPHQL_LIBRARY_DIR)/generated/fastapi_graphql_client" ]]; then \
+		$(MAKE) library-generate MODE="$(MODE)"; \
+	fi
+	@$(SANITIZE_TLS_ENV) \
+	if [[ "$(MODE)" == "docker" ]]; then \
+		$(MAKE) -C "$(FASTAPI_DIR)" down MODE=bare >/dev/null 2>&1 || true; \
+	else \
+		$(MAKE) -C "$(FASTAPI_DIR)" down MODE=docker >/dev/null 2>&1 || true; \
+	fi
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) up MODE="$(MODE)"
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(EXAMPLE_CLIENT_DIR)" run \
+			MODE="$(MODE)" \
+			GRAPHQL_URL="$(if $(filter docker,$(MODE)),$(RUN_GRAPHQL_URL_DOCKER),$(RUN_GRAPHQL_URL))" \
+			EMPLOYEE_ID="$(EMPLOYEE_ID)" \
+			EMPLOYEE_NAME="$(EMPLOYEE_NAME)" \
+			EMPLOYEE_SURNAME="$(EMPLOYEE_SURNAME)" \
+			EMPLOYEE_DESCRIPTION="$(EMPLOYEE_DESCRIPTION)" \
+			UPDATED_EMPLOYEE_NAME="$(UPDATED_EMPLOYEE_NAME)" \
+			UPDATED_EMPLOYEE_SURNAME="$(UPDATED_EMPLOYEE_SURNAME)" \
+			UPDATED_EMPLOYEE_DESCRIPTION="$(UPDATED_EMPLOYEE_DESCRIPTION)"
+
+distclean:
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(FASTAPI_DIR)" distclean MODE="$(MODE)"
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" distclean \
+			MODE="$(MODE)" \
+			SCHEMA_SOURCE="$(LIBRARY_SCHEMA_SOURCE)" \
+			REMOTE_SCHEMA_URL="$(LIBRARY_REMOTE_SCHEMA_URL)"
+	@$(MAKE) -C "$(EXAMPLE_CLIENT_DIR)" distclean
+
+library-help:
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" help \
+			MODE="$(MODE)" \
+			SCHEMA_SOURCE="$(LIBRARY_SCHEMA_SOURCE)" \
+			REMOTE_SCHEMA_URL="$(LIBRARY_REMOTE_SCHEMA_URL)"
+
+library-deps library-generate library-clean library-distclean:
+	@$(SANITIZE_TLS_ENV) \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" $(patsubst library-%,%,$@) \
+			MODE="$(MODE)" \
+			SCHEMA_SOURCE="$(LIBRARY_SCHEMA_SOURCE)" \
+			REMOTE_SCHEMA_URL="$(LIBRARY_REMOTE_SCHEMA_URL)"

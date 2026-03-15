@@ -77,6 +77,15 @@ docker-compose.override.yml
 # ==========================================
 schema.graphql
 schema.json
+fastapi/.venv/
+fastapi/data/
+fastapi/runtime/
+fastapi/company.sqlite
+graphql-library/.venv/
+graphql-library/build/
+graphql-library/generated/
+graphql-library/dist/
+graphql-library/*.egg-info/
 
 # ==========================================
 # Temporary files

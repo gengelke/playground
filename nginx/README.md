@@ -15,7 +15,14 @@ Stop:
 make down MODE=docker
 ```
 
+Cleanup:
+
+```bash
+make distclean
+```
+
 `MODE=bare` is intentionally a no-op for this service.
+`make distclean` is also effectively a no-op because this service does not persist generated local state.
 
 If `NGINX_HTTP_PORT=80`, startup now fails fast when Rancher Desktop Kubernetes Traefik (`svclb-traefik`) is already bound to host port `80`.
 

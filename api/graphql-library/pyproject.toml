@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastapi-graphql-client"
+version = "0.1.0"
+description = "Auto-generated GraphQL client library for the FastAPI service."
+requires-python = ">=3.9"
+dependencies = [
+  "httpx>=0.23,<1",
+  "pydantic>=1.10,<3",
+]
+
+[tool.setuptools.package-dir]
+"" = "generated"
+
+[tool.setuptools.packages.find]
+where = ["generated"]
+include = ["fastapi_graphql_client*"]

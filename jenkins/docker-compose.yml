@@ -1,7 +1,7 @@
 services:
   jenkins-prod:
     build:
-      context: ./jenkins/controller
+      context: ./controller
     container_name: jenkins-prod
     restart: unless-stopped
     environment:
@@ -15,9 +15,13 @@ services:
       PIPELINE_BRANCH: ${PROD_BRANCH:-main}
       GENERATE_LIBRARY_PIPELINE_REPO_URL: ${PROD_GENERATE_LIBRARY_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/generate-library}
       GENERATE_LIBRARY_PIPELINE_BRANCH: ${PROD_GENERATE_LIBRARY_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}
+      GENERATE_LIBRARY_SOURCE_REPO_URL: ${PROD_GENERATE_LIBRARY_SOURCE_REPO_URL:-${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
+      GENERATE_LIBRARY_SOURCE_BRANCH: ${PROD_GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_SOURCE_BRANCH:-${PROD_GENERATE_LIBRARY_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}}}
       PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
       PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
       PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
+      PIPELINE_AUTO_TRIGGER: ${PIPELINE_AUTO_TRIGGER:-true}
+      GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER: ${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}
       AGENT_COUNT: ${AGENT_COUNT:-2}
       AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -37,7 +41,7 @@ services:
 
   jenkins-dev:
     build:
-      context: ./jenkins/controller
+      context: ./controller
     container_name: jenkins-dev
     restart: unless-stopped
     environment:
@@ -51,9 +55,13 @@ services:
       PIPELINE_BRANCH: ${DEV_BRANCH:-dev}
       GENERATE_LIBRARY_PIPELINE_REPO_URL: ${DEV_GENERATE_LIBRARY_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/generate-library}
       GENERATE_LIBRARY_PIPELINE_BRANCH: ${DEV_GENERATE_LIBRARY_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}
+      GENERATE_LIBRARY_SOURCE_REPO_URL: ${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL:-${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
+      GENERATE_LIBRARY_SOURCE_BRANCH: ${DEV_GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_SOURCE_BRANCH:-${DEV_GENERATE_LIBRARY_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}}}
       PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
       PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
       PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
+      PIPELINE_AUTO_TRIGGER: ${PIPELINE_AUTO_TRIGGER:-true}
+      GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER: ${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}
       AGENT_COUNT: ${AGENT_COUNT:-2}
       AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -73,7 +81,7 @@ services:
 
   jenkins-prod-agent-1:
     build:
-      context: ./jenkins/agent
+      context: ./agent
     container_name: jenkins-prod-agent-1
     restart: unless-stopped
     environment:
@@ -93,7 +101,7 @@ services:
 
   jenkins-prod-agent-2:
     build:
-      context: ./jenkins/agent
+      context: ./agent
     container_name: jenkins-prod-agent-2
     restart: unless-stopped
     environment:
@@ -113,7 +121,7 @@ services:
 
   jenkins-dev-agent-1:
     build:
-      context: ./jenkins/agent
+      context: ./agent
     container_name: jenkins-dev-agent-1
     restart: unless-stopped
     environment:
@@ -133,7 +141,7 @@ services:
 
   jenkins-dev-agent-2:
     build:
-      context: ./jenkins/agent
+      context: ./agent
     container_name: jenkins-dev-agent-2
     restart: unless-stopped
     environment:

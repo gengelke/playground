@@ -1,0 +1,2 @@
+# nginx keeps no generated local state.
+# This file exists so service-level ignore coverage is explicit.

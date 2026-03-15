@@ -71,14 +71,25 @@ fi
         sh '''#!/usr/bin/env bash
 set -euo pipefail
 
+source_repo_url="${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+source_branch="${GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_PIPELINE_BRANCH:-main}}"
+
 rm -rf playground
 
-git clone --depth 1 --branch main https://github.com/gengelke/playground.git playground
+echo "Cloning source repository ${source_repo_url} (branch ${source_branch})"
+git clone --depth 1 --branch "$source_branch" "$source_repo_url" playground
 cd playground/api
-PATH="$PWD/.venv/bin:$PATH" make workflow MODE=bare VAULT_ADDR=http://host.docker.internal:8200
 
-if [[ ! -d generated_client && ! -d generated-client ]]; then
-  echo "Expected generated_client or generated-client directory after workflow run"
+if ! grep -Eq '(^|[[:space:]])library-generate([[:space:]:]|$)' Makefile; then
+  echo "The checked-out source at ${source_repo_url} branch ${source_branch} does not provide 'make library-generate'."
+  echo "Push the updated api/Makefile to that branch or override GENERATE_LIBRARY_SOURCE_REPO_URL / GENERATE_LIBRARY_SOURCE_BRANCH for Jenkins."
+  exit 1
+fi
+
+make library-generate MODE=docker
+
+if [[ ! -d graphql-library/generated/fastapi_graphql_client ]]; then
+  echo "Expected graphql-library/generated/fastapi_graphql_client after library generation"
   exit 1
 fi
 '''
@@ -91,13 +102,13 @@ fi
 set -euo pipefail
 source .nexus.env
 
-cd playground/api
+cd playground/api/graphql-library
 
-if [[ ! -x .venv/bin/python3 ]]; then
-  python3 -m venv .venv
+if [[ ! -x .venv-build/bin/python3 ]]; then
+  python3 -m venv .venv-build
 fi
 
-source .venv/bin/activate
+source .venv-build/bin/activate
 pip install --upgrade pip build twine
 
 python3 - "${BUILD_NUMBER:-}" <<'PY'
@@ -125,6 +136,7 @@ updated = re.sub(
     flags=re.MULTILINE,
 )
 pyproject.write_text(updated)
+pathlib.Path(".package-version").write_text(f"{new_version}\\n")
 print(f"Using package version {new_version}")
 PY
 
@@ -171,11 +183,46 @@ done
 '''
       }
     }
+
+    stage('Verify Uploaded Package') {
+      steps {
+        sh '''#!/usr/bin/env bash
+set -euo pipefail
+source .nexus.env
+
+cd playground/api/graphql-library
+
+rm -rf .venv-verify/
+python3 -m venv .venv-verify
+source .venv-verify/bin/activate
+
+unset SSL_CERT_FILE
+unset REQUESTS_CA_BUNDLE
+unset CURL_CA_BUNDLE
+
+package_version="$(cat .package-version)"
+nexus_simple_url="${NEXUS_URL%/}/repository/${NEXUS_PYPI_REPO}/simple"
+nexus_host="$(printf '%s' "${NEXUS_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\\1#')"
+
+pip install \
+  --index-url https://pypi.org/simple \
+  --extra-index-url "${nexus_simple_url}" \
+  --trusted-host "${nexus_host}" \
+  "fastapi-graphql-client==${package_version}"
+
+python - <<'PY'
+import fastapi_graphql_client
+
+print(f"Imported package version from {fastapi_graphql_client.__file__}")
+PY
+'''
+      }
+    }
   }
 
   post {
     always {
-      sh 'rm -f .nexus.env /tmp/nexus-create.out /tmp/nexus-pypi-health.out || true'
+      sh 'rm -f .nexus.env /tmp/nexus-create.out /tmp/nexus-pypi-health.out playground/api/graphql-library/.package-version || true'
     }
   }
 }

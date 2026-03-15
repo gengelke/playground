@@ -44,6 +44,7 @@ make status MODE=bare
 make up MODE=docker
 make down MODE=docker
 make logs MODE=docker
+make distclean
 
 make up MODE=bare
 make down MODE=bare
@@ -60,6 +61,7 @@ make logs MODE=bare
 - On startup, scripts ensure managed login users exist and are synced: `admin/password` and `user/password` (override via `GITLAB_ADMIN_PASSWORD` and `GITLAB_USER_PASSWORD`).
 - Generated credentials are printed to CLI so no manual bootstrap steps are required.
 - If `../vault/.vault/credentials.env` is available and Vault is reachable, GitLab credentials are also synced to `secret/data/services/gitlab`.
+- `make distclean` removes the generated `.env` file after stopping local services.
 - If you only want runner registration without reinstalling GitLab in bare mode, set:
 
 ```bash

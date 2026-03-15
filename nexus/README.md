@@ -50,6 +50,7 @@ make status MODE=docker
 make status MODE=bare
 make restart MODE=docker
 make restart MODE=bare
+make distclean
 ```
 
 By default Nexus is exposed at:
@@ -116,3 +117,4 @@ Key vars:
 - Docker data: `data/docker-data`
 - Bare data: `data/bare-data`
 - Bare logs: `logs/bare/nexus.log`
+- `make distclean` removes `.local/`, `data/`, `logs/`, and `run/`.
