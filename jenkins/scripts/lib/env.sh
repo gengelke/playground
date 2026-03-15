@@ -39,6 +39,18 @@ DEV_GENERATE_LIBRARY_SOURCE_REPO_URL="${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL:-}"
 GENERATE_LIBRARY_SOURCE_BRANCH="${GENERATE_LIBRARY_SOURCE_BRANCH:-}"
 PROD_GENERATE_LIBRARY_SOURCE_BRANCH="${PROD_GENERATE_LIBRARY_SOURCE_BRANCH:-}"
 DEV_GENERATE_LIBRARY_SOURCE_BRANCH="${DEV_GENERATE_LIBRARY_SOURCE_BRANCH:-}"
+LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL:-}"
+PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL="${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL:-}"
+DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL="${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL:-}"
+LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-}"
+PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH="${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-}"
+DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH="${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-}"
+LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL="${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-}"
+PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL="${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-}"
+DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL="${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-}"
+LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
+PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
+DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
@@ -46,6 +58,9 @@ PIPELINE_JOB_NAME="${PIPELINE_JOB_NAME:-example-pipeline}"
 PIPELINE_AUTH_TOKEN="${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}"
 PIPELINE_AUTO_TRIGGER="${PIPELINE_AUTO_TRIGGER:-true}"
 GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER="${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}"
+LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME:-library-example-client}"
+LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN:-}"
+LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER:-false}"
 
 AGENT_COUNT="${AGENT_COUNT:-2}"
 AGENT_EXECUTORS="${AGENT_EXECUTORS:-1}"
@@ -299,6 +314,131 @@ resolve_instance_generate_library_source_branch() {
   esac
 
   resolve_instance_generate_library_pipeline_branch "$instance"
+}
+
+resolve_instance_library_example_client_pipeline_repo_url() {
+  local mode="$1"
+  local instance="$2"
+
+  if [[ -n "${LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}" ]]; then
+    printf '%s' "${LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/library-example-client' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/library-example-client' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    dev)
+      if [[ -n "${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/library-example-client' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/library-example-client' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_library_example_client_pipeline_branch() {
+  local instance="$1"
+
+  if [[ -n "${LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH}" ]]; then
+    printf '%s' "${LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod) printf '%s' "${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${PROD_BRANCH}}" ;;
+    dev) printf '%s' "${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${DEV_BRANCH}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_library_example_client_source_repo_url() {
+  local instance="$1"
+
+  if [[ -n "${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}" ]]; then
+    printf '%s' "${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' 'https://github.com/gengelke/playground.git'
+}
+
+resolve_instance_library_example_client_source_branch() {
+  local instance="$1"
+
+  if [[ -n "${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}" ]]; then
+    printf '%s' "${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  resolve_instance_library_example_client_pipeline_branch "$instance"
 }
 
 read_env_file_value() {

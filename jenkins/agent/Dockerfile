@@ -4,6 +4,7 @@ USER root
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
       curl \
+      docker.io \
       git \
       jq \
       make \
@@ -15,5 +16,4 @@ RUN apt-get update \
 COPY start-agent.sh /usr/local/bin/start-agent.sh
 RUN chmod 0755 /usr/local/bin/start-agent.sh
 
-USER jenkins
 ENTRYPOINT ["/usr/local/bin/start-agent.sh"]

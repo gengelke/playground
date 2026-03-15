@@ -53,6 +53,8 @@ GITEA_AUTO_ADD_JENKINS_EXAMPLE=true
 GITEA_JENKINS_EXAMPLE_REPO=jenkins-example
 GITEA_AUTO_ADD_GENERATE_LIBRARY=true
 GITEA_GENERATE_LIBRARY_REPO=generate-library
+GITEA_AUTO_ADD_LIBRARY_EXAMPLE_CLIENT=true
+GITEA_LIBRARY_EXAMPLE_CLIENT_REPO=library-example-client
 RUNNER1_NAME=agent-runner-1
 RUNNER2_NAME=agent-runner-2
 RUNNER_LABELS_DOCKER=linux-amd64:docker://node:20-bookworm
@@ -78,9 +80,13 @@ RUNNER_LABELS_BARE=linux-amd64:host
 - `make up` also ensures a private repository (`generate-library`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
   - checks out the configured generate-library source repo (default `https://github.com/gengelke/playground.git`)
   - uses the configured generate-library source branch, defaulting to the job branch
-  - runs `make library-generate MODE=docker` in `api/`
-  - builds and uploads the `fastapi-graphql-client` package from `api/graphql-library`
-  - verifies installation from the Nexus PyPI repo `pypi-public` using Vault credentials from `secret/data/services/nexus`
+  - runs `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`
+  - builds and uploads the `fastapi-graphql-client` package from `api/graphql-library` to the Nexus PyPI repo `pypi-public`
+- `make up` also ensures a private repository (`library-example-client`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
+  - checks out the configured library-example-client source repo (default `https://github.com/gengelke/playground.git`)
+  - starts the FastAPI service in bare mode
+  - installs `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`
+  - runs `api/example-client/employee_workflow.py` using the installed package
 - The runner registration token is generated directly from Gitea during bootstrap, persisted in `runtime/shared/generated.env`, and synced to Vault.
 - In bare mode, runners are registered once and persisted under `runtime/bare/runner1` and `runtime/bare/runner2`.
 - Bootstrap values/secrets are persisted in `runtime/shared/generated.env`.

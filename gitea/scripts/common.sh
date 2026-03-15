@@ -340,6 +340,7 @@ ensure_bootstrap_repositories() {
   ensure_example_workflow_repo
   ensure_jenkins_example_repo
   ensure_generate_library_repo
+  ensure_library_example_client_repo
 }
 
 ensure_example_workflow_repo() {
@@ -750,4 +751,25 @@ ensure_generate_library_repo() {
     "$jenkinsfile" \
     "$jenkinsfile" \
     "generate-library"
+}
+
+ensure_library_example_client_repo() {
+  local auto_add="${GITEA_AUTO_ADD_LIBRARY_EXAMPLE_CLIENT:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping library-example-client setup (GITEA_AUTO_ADD_LIBRARY_EXAMPLE_CLIENT=${GITEA_AUTO_ADD_LIBRARY_EXAMPLE_CLIENT:-false})"
+      return 0
+      ;;
+  esac
+
+  local jenkinsfile
+  jenkinsfile="$(cat "${ROOT_DIR}/templates/library-example-client.Jenkinsfile")"
+
+  ensure_repo_with_branch_jenkinsfiles \
+    "${GITEA_LIBRARY_EXAMPLE_CLIENT_REPO:-library-example-client}" \
+    "$jenkinsfile" \
+    "$jenkinsfile" \
+    "library-example-client"
 }

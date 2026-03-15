@@ -6,9 +6,15 @@ pipeline {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
 
+banner() {
+  printf '\\n========== %s ==========%s' "$1" "\\n"
+}
+
 vault_addr="${VAULT_ADDR:-http://host.docker.internal:8200}"
 vault_token="${VAULT_TOKEN:-}"
 pypi_repo="${NEXUS_PYPI_REPO:-pypi-public}"
+
+banner "Fetch Nexus Credentials From Vault"
 
 if [[ -z "$vault_token" ]]; then
   echo "VAULT_TOKEN is required for Vault authentication."
@@ -31,6 +37,8 @@ nexus_url="$(printf '%s' "$nexus_url" | sed \
   -e 's#https://localhost#https://host.docker.internal#g' \
   -e 's#https://127.0.0.1#https://host.docker.internal#g')"
 
+banner "Write Resolved Nexus Environment"
+
 {
   echo "NEXUS_URL=${nexus_url}"
   echo "NEXUS_USER=${nexus_user}"
@@ -46,10 +54,18 @@ chmod 600 .nexus.env
       steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
+
+banner() {
+  printf '\\n========== %s ==========%s' "$1" "\\n"
+}
+
 source .nexus.env
+
+banner "Ensure Nexus PyPI Repository"
 
 repos_json="$(curl -fsS -u "${NEXUS_USER}:${NEXUS_PASSWORD}" "${NEXUS_URL%/}/service/rest/v1/repositories")"
 if ! printf '%s' "$repos_json" | jq -e --arg repo "$NEXUS_PYPI_REPO" '.[] | select(.name == $repo)' >/dev/null; then
+  banner "Create Missing Nexus PyPI Repository"
   create_payload="$(jq -nc --arg name "$NEXUS_PYPI_REPO" '{name:$name,online:true,storage:{blobStoreName:"default",strictContentTypeValidation:true,writePolicy:"ALLOW"}}')"
   create_status="$(curl -sS -o /tmp/nexus-create.out -w '%{http_code}' \
     -u "${NEXUS_USER}:${NEXUS_PASSWORD}" \
@@ -71,14 +87,23 @@ fi
         sh '''#!/usr/bin/env bash
 set -euo pipefail
 
+banner() {
+  printf '\\n========== %s ==========%s' "$1" "\\n"
+}
+
 source_repo_url="${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
 source_branch="${GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_PIPELINE_BRANCH:-main}}"
 
+banner "Prepare Workspace"
+
 rm -rf playground
 
+banner "Clone Source Repository"
 echo "Cloning source repository ${source_repo_url} (branch ${source_branch})"
 git clone --depth 1 --branch "$source_branch" "$source_repo_url" playground
 cd playground/api
+
+banner "Validate API Makefile"
 
 if ! grep -Eq '(^|[[:space:]])library-generate([[:space:]:]|$)' Makefile; then
   echo "The checked-out source at ${source_repo_url} branch ${source_branch} does not provide 'make library-generate'."
@@ -86,8 +111,10 @@ if ! grep -Eq '(^|[[:space:]])library-generate([[:space:]:]|$)' Makefile; then
   exit 1
 fi
 
-make library-generate MODE=docker
+banner "Generate GraphQL Client Library"
+make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local
 
+banner "Verify Generated Client Output"
 if [[ ! -d graphql-library/generated/fastapi_graphql_client ]]; then
   echo "Expected graphql-library/generated/fastapi_graphql_client after library generation"
   exit 1
@@ -100,7 +127,14 @@ fi
       steps {
         sh '''#!/usr/bin/env bash
 set -euo pipefail
+
+banner() {
+  printf '\\n========== %s ==========%s' "$1" "\\n"
+}
+
 source .nexus.env
+
+banner "Prepare Package Build Environment"
 
 cd playground/api/graphql-library
 
@@ -110,6 +144,8 @@ fi
 
 source .venv-build/bin/activate
 pip install --upgrade pip build twine
+
+banner "Compute Package Version"
 
 python3 - "${BUILD_NUMBER:-}" <<'PY'
 import datetime
@@ -140,9 +176,13 @@ pathlib.Path(".package-version").write_text(f"{new_version}\\n")
 print(f"Using package version {new_version}")
 PY
 
+banner "Build Python Package"
+
 python3 -m build
 
 upload_url="${NEXUS_URL%/}/repository/${NEXUS_PYPI_REPO}/"
+
+banner "Wait For Nexus PyPI Endpoint"
 
 wait_attempts=24
 for attempt in $(seq 1 "$wait_attempts"); do
@@ -160,6 +200,8 @@ for attempt in $(seq 1 "$wait_attempts"); do
   echo "Waiting for Nexus PyPI endpoint ${upload_url} (HTTP ${health_status:-n/a}, attempt ${attempt}/${wait_attempts})"
   sleep 5
 done
+
+banner "Upload Package To Nexus"
 
 upload_attempts=6
 for attempt in $(seq 1 "$upload_attempts"); do
@@ -184,45 +226,11 @@ done
       }
     }
 
-    stage('Verify Uploaded Package') {
-      steps {
-        sh '''#!/usr/bin/env bash
-set -euo pipefail
-source .nexus.env
-
-cd playground/api/graphql-library
-
-rm -rf .venv-verify/
-python3 -m venv .venv-verify
-source .venv-verify/bin/activate
-
-unset SSL_CERT_FILE
-unset REQUESTS_CA_BUNDLE
-unset CURL_CA_BUNDLE
-
-package_version="$(cat .package-version)"
-nexus_simple_url="${NEXUS_URL%/}/repository/${NEXUS_PYPI_REPO}/simple"
-nexus_host="$(printf '%s' "${NEXUS_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\\1#')"
-
-pip install \
-  --index-url https://pypi.org/simple \
-  --extra-index-url "${nexus_simple_url}" \
-  --trusted-host "${nexus_host}" \
-  "fastapi-graphql-client==${package_version}"
-
-python - <<'PY'
-import fastapi_graphql_client
-
-print(f"Imported package version from {fastapi_graphql_client.__file__}")
-PY
-'''
-      }
-    }
   }
 
   post {
     always {
-      sh 'rm -f .nexus.env /tmp/nexus-create.out /tmp/nexus-pypi-health.out playground/api/graphql-library/.package-version || true'
+      sh 'printf "\\n========== Cleanup ==========\n"; rm -f .nexus.env /tmp/nexus-create.out /tmp/nexus-pypi-health.out playground/api/graphql-library/.package-version || true'
     }
   }
 }

@@ -35,6 +35,15 @@ def generateLibraryPipelineAutoTrigger = env.getOrDefault("GENERATE_LIBRARY_PIPE
 def generateLibraryPipelineGitCredentialsId = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_GIT_CREDENTIALS_ID", pipelineGitCredentialsId).trim()
 def generateLibraryPipelineGitUsername = env.getOrDefault("GENERATE_LIBRARY_PIPELINE_GIT_USERNAME", pipelineGitUsername).trim()
 def generateLibraryPipelineGitPassword = env.containsKey("GENERATE_LIBRARY_PIPELINE_GIT_PASSWORD") ? env.get("GENERATE_LIBRARY_PIPELINE_GIT_PASSWORD") : pipelineGitPassword
+def libraryExampleClientPipelineRepoUrl = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL", "http://host.docker.internal:3000/myuser/library-example-client")
+def libraryExampleClientPipelineBranch = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH", pipelineBranch)
+def libraryExampleClientPipelineScriptPath = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_SCRIPT_PATH", pipelineScriptPath)
+def libraryExampleClientPipelineJobName = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME", "library-example-client")
+def libraryExampleClientPipelineAuthToken = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN", "")
+def libraryExampleClientPipelineAutoTrigger = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER", "false")
+def libraryExampleClientPipelineGitCredentialsId = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_GIT_CREDENTIALS_ID", pipelineGitCredentialsId).trim()
+def libraryExampleClientPipelineGitUsername = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_GIT_USERNAME", pipelineGitUsername).trim()
+def libraryExampleClientPipelineGitPassword = env.containsKey("LIBRARY_EXAMPLE_CLIENT_PIPELINE_GIT_PASSWORD") ? env.get("LIBRARY_EXAMPLE_CLIENT_PIPELINE_GIT_PASSWORD") : pipelineGitPassword
 def agentCount = (env.getOrDefault("AGENT_COUNT", "2") as Integer)
 def agentExecutors = (env.getOrDefault("AGENT_EXECUTORS", "1") as Integer)
 def agentRemoteFs = env.getOrDefault("AGENT_REMOTE_FS", "/home/jenkins/agent")
@@ -345,6 +354,18 @@ Pipeline script path: ${scriptPath}
       gitCredentialsId: generateLibraryPipelineGitCredentialsId,
       gitUsername: generateLibraryPipelineGitUsername,
       gitPassword: generateLibraryPipelineGitPassword
+    ])
+
+    configurePipelineJob([
+      jobName: libraryExampleClientPipelineJobName,
+      repoUrl: libraryExampleClientPipelineRepoUrl,
+      branch: libraryExampleClientPipelineBranch,
+      scriptPath: libraryExampleClientPipelineScriptPath,
+      authToken: libraryExampleClientPipelineAuthToken,
+      autoTrigger: libraryExampleClientPipelineAutoTrigger,
+      gitCredentialsId: libraryExampleClientPipelineGitCredentialsId,
+      gitUsername: libraryExampleClientPipelineGitUsername,
+      gitPassword: libraryExampleClientPipelineGitPassword
     ])
   } catch (Exception e) {
     println("[bootstrap] pipeline job configuration skipped due to error: ${e.class.simpleName}: ${e.message}")

@@ -27,6 +27,7 @@ start_controller() {
   local instance="$1"
   local name branch port base_url root_url home_dir logs_dir pid_file log_file repo_url git_credentials_id git_username git_password
   local generate_library_repo_url generate_library_branch generate_library_source_repo_url generate_library_source_branch
+  local library_example_client_repo_url library_example_client_branch library_example_client_source_repo_url library_example_client_source_branch
 
   name="$(instance_name "$instance")"
   branch="$(instance_branch "$instance")"
@@ -38,6 +39,10 @@ start_controller() {
   generate_library_branch="$(resolve_instance_generate_library_pipeline_branch "$instance")"
   generate_library_source_repo_url="$(resolve_instance_generate_library_source_repo_url "$instance")"
   generate_library_source_branch="$(resolve_instance_generate_library_source_branch "$instance")"
+  library_example_client_repo_url="$(resolve_instance_library_example_client_pipeline_repo_url bare "$instance")"
+  library_example_client_branch="$(resolve_instance_library_example_client_pipeline_branch "$instance")"
+  library_example_client_source_repo_url="$(resolve_instance_library_example_client_source_repo_url "$instance")"
+  library_example_client_source_branch="$(resolve_instance_library_example_client_source_branch "$instance")"
   port="$(instance_http_port "$instance")"
   base_url="$(instance_base_url "$instance")"
   root_url="$(resolve_instance_root_url "$instance")"
@@ -67,11 +72,18 @@ start_controller() {
     export GENERATE_LIBRARY_PIPELINE_BRANCH="$generate_library_branch"
     export GENERATE_LIBRARY_SOURCE_REPO_URL="$generate_library_source_repo_url"
     export GENERATE_LIBRARY_SOURCE_BRANCH="$generate_library_source_branch"
+    export LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL="$library_example_client_repo_url"
+    export LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH="$library_example_client_branch"
+    export LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL="$library_example_client_source_repo_url"
+    export LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="$library_example_client_source_branch"
     export PIPELINE_SCRIPT_PATH="$PIPELINE_SCRIPT_PATH"
     export PIPELINE_JOB_NAME="$PIPELINE_JOB_NAME"
     export PIPELINE_AUTH_TOKEN="$PIPELINE_AUTH_TOKEN"
     export PIPELINE_AUTO_TRIGGER="$PIPELINE_AUTO_TRIGGER"
     export GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER="$GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER"
+    export LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME="$LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME"
+    export LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN="$LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN"
+    export LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER="$LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER"
     export AGENT_COUNT="$AGENT_COUNT"
     export AGENT_EXECUTORS="$AGENT_EXECUTORS"
     export JENKINS_ADMIN_USER="$JENKINS_ADMIN_USER"

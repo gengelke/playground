@@ -17,11 +17,18 @@ services:
       GENERATE_LIBRARY_PIPELINE_BRANCH: ${PROD_GENERATE_LIBRARY_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}
       GENERATE_LIBRARY_SOURCE_REPO_URL: ${PROD_GENERATE_LIBRARY_SOURCE_REPO_URL:-${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
       GENERATE_LIBRARY_SOURCE_BRANCH: ${PROD_GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_SOURCE_BRANCH:-${PROD_GENERATE_LIBRARY_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}}}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL: ${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/library-example-client}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH: ${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}
+      LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL: ${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
+      LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH: ${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-${PROD_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${PROD_BRANCH:-main}}}}
       PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
       PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
       PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
       PIPELINE_AUTO_TRIGGER: ${PIPELINE_AUTO_TRIGGER:-true}
       GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER: ${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME:-library-example-client}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN:-}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER:-false}
       AGENT_COUNT: ${AGENT_COUNT:-2}
       AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -57,11 +64,18 @@ services:
       GENERATE_LIBRARY_PIPELINE_BRANCH: ${DEV_GENERATE_LIBRARY_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}
       GENERATE_LIBRARY_SOURCE_REPO_URL: ${DEV_GENERATE_LIBRARY_SOURCE_REPO_URL:-${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
       GENERATE_LIBRARY_SOURCE_BRANCH: ${DEV_GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_SOURCE_BRANCH:-${DEV_GENERATE_LIBRARY_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}}}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL: ${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/library-example-client}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH: ${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}
+      LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL: ${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}}
+      LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH: ${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-${DEV_LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-${DEV_BRANCH:-dev}}}}
       PIPELINE_SCRIPT_PATH: ${PIPELINE_SCRIPT_PATH:-Jenkinsfile}
       PIPELINE_JOB_NAME: ${PIPELINE_JOB_NAME:-example-pipeline}
       PIPELINE_AUTH_TOKEN: ${PIPELINE_AUTH_TOKEN:-example-pipeline-auth-token}
       PIPELINE_AUTO_TRIGGER: ${PIPELINE_AUTO_TRIGGER:-true}
       GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER: ${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER:-false}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME:-library-example-client}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN:-}
+      LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER: ${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER:-false}
       AGENT_COUNT: ${AGENT_COUNT:-2}
       AGENT_EXECUTORS: ${AGENT_EXECUTORS:-1}
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -84,7 +98,9 @@ services:
       context: ./agent
     container_name: jenkins-prod-agent-1
     restart: unless-stopped
+    user: "0:0"
     environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
       JENKINS_URL: http://jenkins-prod:8080/
       JENKINS_AGENT_NAME: jenkins-prod-agent-1
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -94,6 +110,7 @@ services:
       NEXUS_PYPI_REPO: ${NEXUS_PYPI_REPO:-pypi-public}
     volumes:
       - ./.state/docker/jenkins-prod-agent-1:/home/jenkins/agent
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - jenkins-prod
     networks:
@@ -104,7 +121,9 @@ services:
       context: ./agent
     container_name: jenkins-prod-agent-2
     restart: unless-stopped
+    user: "0:0"
     environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
       JENKINS_URL: http://jenkins-prod:8080/
       JENKINS_AGENT_NAME: jenkins-prod-agent-2
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -114,6 +133,7 @@ services:
       NEXUS_PYPI_REPO: ${NEXUS_PYPI_REPO:-pypi-public}
     volumes:
       - ./.state/docker/jenkins-prod-agent-2:/home/jenkins/agent
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - jenkins-prod
     networks:
@@ -124,7 +144,9 @@ services:
       context: ./agent
     container_name: jenkins-dev-agent-1
     restart: unless-stopped
+    user: "0:0"
     environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
       JENKINS_URL: http://jenkins-dev:8080/
       JENKINS_AGENT_NAME: jenkins-dev-agent-1
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -134,6 +156,7 @@ services:
       NEXUS_PYPI_REPO: ${NEXUS_PYPI_REPO:-pypi-public}
     volumes:
       - ./.state/docker/jenkins-dev-agent-1:/home/jenkins/agent
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - jenkins-dev
     networks:
@@ -144,7 +167,9 @@ services:
       context: ./agent
     container_name: jenkins-dev-agent-2
     restart: unless-stopped
+    user: "0:0"
     environment:
+      DOCKER_HOST: unix:///var/run/docker.sock
       JENKINS_URL: http://jenkins-dev:8080/
       JENKINS_AGENT_NAME: jenkins-dev-agent-2
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -154,6 +179,7 @@ services:
       NEXUS_PYPI_REPO: ${NEXUS_PYPI_REPO:-pypi-public}
     volumes:
       - ./.state/docker/jenkins-dev-agent-2:/home/jenkins/agent
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - jenkins-dev
     networks:
