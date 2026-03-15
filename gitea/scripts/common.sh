@@ -341,6 +341,7 @@ ensure_bootstrap_repositories() {
   ensure_jenkins_example_repo
   ensure_generate_library_repo
   ensure_library_example_client_repo
+  ensure_add_employee_repo
 }
 
 ensure_example_workflow_repo() {
@@ -772,4 +773,25 @@ ensure_library_example_client_repo() {
     "$jenkinsfile" \
     "$jenkinsfile" \
     "library-example-client"
+}
+
+ensure_add_employee_repo() {
+  local auto_add="${GITEA_AUTO_ADD_ADD_EMPLOYEE:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping add-employee setup (GITEA_AUTO_ADD_ADD_EMPLOYEE=${GITEA_AUTO_ADD_ADD_EMPLOYEE:-false})"
+      return 0
+      ;;
+  esac
+
+  local jenkinsfile
+  jenkinsfile="$(cat "${ROOT_DIR}/templates/add-employee.Jenkinsfile")"
+
+  ensure_repo_with_branch_jenkinsfiles \
+    "${GITEA_ADD_EMPLOYEE_REPO:-add-employee}" \
+    "$jenkinsfile" \
+    "$jenkinsfile" \
+    "add-employee"
 }

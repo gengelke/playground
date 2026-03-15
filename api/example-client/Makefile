@@ -21,10 +21,10 @@ GRAPHQL_URL ?= $(if $(filter docker,$(MODE)),$(DEFAULT_DOCKER_GRAPHQL_URL),$(DEF
 EMPLOYEE_ID ?=
 EMPLOYEE_NAME ?=
 EMPLOYEE_SURNAME ?=
-EMPLOYEE_DESCRIPTION ?=
+EMPLOYEE_ROLE ?=
 UPDATED_EMPLOYEE_NAME ?=
 UPDATED_EMPLOYEE_SURNAME ?=
-UPDATED_EMPLOYEE_DESCRIPTION ?=
+UPDATED_EMPLOYEE_ROLE ?=
 
 .PHONY: help run run-local clean distclean bare-run docker-run
 
@@ -37,10 +37,10 @@ run:
 		EMPLOYEE_ID="$(EMPLOYEE_ID)" \
 		EMPLOYEE_NAME="$(EMPLOYEE_NAME)" \
 		EMPLOYEE_SURNAME="$(EMPLOYEE_SURNAME)" \
-		EMPLOYEE_DESCRIPTION="$(EMPLOYEE_DESCRIPTION)" \
+		EMPLOYEE_ROLE="$(EMPLOYEE_ROLE)" \
 		UPDATED_EMPLOYEE_NAME="$(UPDATED_EMPLOYEE_NAME)" \
 		UPDATED_EMPLOYEE_SURNAME="$(UPDATED_EMPLOYEE_SURNAME)" \
-		UPDATED_EMPLOYEE_DESCRIPTION="$(UPDATED_EMPLOYEE_DESCRIPTION)"
+		UPDATED_EMPLOYEE_ROLE="$(UPDATED_EMPLOYEE_ROLE)"
 
 bare-run:
 	@if [[ ! -x "$(GRAPHQL_LIBRARY_VENV_PYTHON)" ]]; then \
@@ -57,10 +57,10 @@ bare-run:
 			$(if $(EMPLOYEE_ID),--employee-id "$(EMPLOYEE_ID)",) \
 			$(if $(EMPLOYEE_NAME),--employee-name "$(EMPLOYEE_NAME)",) \
 			$(if $(EMPLOYEE_SURNAME),--employee-surname "$(EMPLOYEE_SURNAME)",) \
-			$(if $(EMPLOYEE_DESCRIPTION),--employee-description "$(EMPLOYEE_DESCRIPTION)",) \
+			$(if $(EMPLOYEE_ROLE),--employee-role "$(EMPLOYEE_ROLE)",) \
 			$(if $(UPDATED_EMPLOYEE_NAME),--updated-employee-name "$(UPDATED_EMPLOYEE_NAME)",) \
 			$(if $(UPDATED_EMPLOYEE_SURNAME),--updated-employee-surname "$(UPDATED_EMPLOYEE_SURNAME)",) \
-			$(if $(UPDATED_EMPLOYEE_DESCRIPTION),--updated-employee-description "$(UPDATED_EMPLOYEE_DESCRIPTION)",)
+			$(if $(UPDATED_EMPLOYEE_ROLE),--updated-employee-role "$(UPDATED_EMPLOYEE_ROLE)",)
 
 docker-run:
 	@if [[ ! -d "$(GRAPHQL_LIBRARY_GENERATED_DIR)/fastapi_graphql_client" ]]; then \
@@ -79,10 +79,10 @@ docker-run:
 			$(if $(EMPLOYEE_ID),--employee-id "$(EMPLOYEE_ID)",) \
 			$(if $(EMPLOYEE_NAME),--employee-name "$(EMPLOYEE_NAME)",) \
 			$(if $(EMPLOYEE_SURNAME),--employee-surname "$(EMPLOYEE_SURNAME)",) \
-			$(if $(EMPLOYEE_DESCRIPTION),--employee-description "$(EMPLOYEE_DESCRIPTION)",) \
+			$(if $(EMPLOYEE_ROLE),--employee-role "$(EMPLOYEE_ROLE)",) \
 			$(if $(UPDATED_EMPLOYEE_NAME),--updated-employee-name "$(UPDATED_EMPLOYEE_NAME)",) \
 			$(if $(UPDATED_EMPLOYEE_SURNAME),--updated-employee-surname "$(UPDATED_EMPLOYEE_SURNAME)",) \
-			$(if $(UPDATED_EMPLOYEE_DESCRIPTION),--updated-employee-description "$(UPDATED_EMPLOYEE_DESCRIPTION)",)
+			$(if $(UPDATED_EMPLOYEE_ROLE),--updated-employee-role "$(UPDATED_EMPLOYEE_ROLE)",)
 
 run-local:
 	@$(MAKE) -C "$(ROOT_DIR)" up MODE=bare
@@ -91,10 +91,10 @@ run-local:
 		EMPLOYEE_ID="$(EMPLOYEE_ID)" \
 		EMPLOYEE_NAME="$(EMPLOYEE_NAME)" \
 		EMPLOYEE_SURNAME="$(EMPLOYEE_SURNAME)" \
-		EMPLOYEE_DESCRIPTION="$(EMPLOYEE_DESCRIPTION)" \
+		EMPLOYEE_ROLE="$(EMPLOYEE_ROLE)" \
 		UPDATED_EMPLOYEE_NAME="$(UPDATED_EMPLOYEE_NAME)" \
 		UPDATED_EMPLOYEE_SURNAME="$(UPDATED_EMPLOYEE_SURNAME)" \
-		UPDATED_EMPLOYEE_DESCRIPTION="$(UPDATED_EMPLOYEE_DESCRIPTION)"
+		UPDATED_EMPLOYEE_ROLE="$(UPDATED_EMPLOYEE_ROLE)"
 
 clean:
 	@find "$(MAKEFILE_DIR)" -type d -name "__pycache__" -prune -exec rm -rf {} +
@@ -107,9 +107,9 @@ help:
 	@printf "%s\n" \
 		"Usage:" \
 		"  make run MODE=docker|bare [GRAPHQL_URL=... ] [EMPLOYEE_ID=12345]" \
-		"           [EMPLOYEE_NAME=...] [EMPLOYEE_SURNAME=...] [EMPLOYEE_DESCRIPTION=...]" \
+		"           [EMPLOYEE_NAME=...] [EMPLOYEE_SURNAME=...] [EMPLOYEE_ROLE=...]" \
 		"           [UPDATED_EMPLOYEE_NAME=...] [UPDATED_EMPLOYEE_SURNAME=...]" \
-		"           [UPDATED_EMPLOYEE_DESCRIPTION=...]" \
+		"           [UPDATED_EMPLOYEE_ROLE=...]" \
 		"  make run-local [EMPLOYEE_ID=12345] [EMPLOYEE_NAME=...] [...]" \
 		"  make distclean" \
 		"" \

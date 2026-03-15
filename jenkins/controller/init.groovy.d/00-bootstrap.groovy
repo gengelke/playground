@@ -34,6 +34,12 @@ def libraryExampleClientPipelineBranch = env.getOrDefault("LIBRARY_EXAMPLE_CLIEN
 def libraryExampleClientPipelineJobName = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME", "library-example-client")
 def libraryExampleClientPipelineAuthToken = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN", "")
 def libraryExampleClientPipelineAutoTrigger = env.getOrDefault("LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER", "false")
+def addEmployeePipelineRepoUrl = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_REPO_URL", "http://host.docker.internal:3000/myuser/add-employee")
+def addEmployeePipelineBranch = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_BRANCH", pipelineBranch)
+def addEmployeePipelineJobName = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_JOB_NAME", "add-employee")
+def addEmployeePipelineAuthToken = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN", "")
+def addEmployeePipelineAutoTrigger = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER", "false")
+def addEmployeeFastapiRolesUrl = env.getOrDefault("ADD_EMPLOYEE_FASTAPI_ROLES_URL", "http://host.docker.internal:8000/roles")
 def agentCount = (env.getOrDefault("AGENT_COUNT", "2") as Integer)
 def agentExecutors = (env.getOrDefault("AGENT_EXECUTORS", "1") as Integer)
 def agentRemoteFs = env.getOrDefault("AGENT_REMOTE_FS", "/home/jenkins/agent")
@@ -183,9 +189,74 @@ def systemCredentialsProviderClass = optionalClass("com.cloudbees.plugins.creden
 def domainClass = optionalClass("com.cloudbees.plugins.credentials.domains.Domain")
 def credentialsScopeClass = optionalClass("com.cloudbees.plugins.credentials.CredentialsScope")
 def usernamePasswordCredentialsImplClass = optionalClass("com.cloudbees.plugins.credentials.impl.UsernamePasswordCredentialsImpl")
+def parametersDefinitionPropertyClass = optionalClass("hudson.model.ParametersDefinitionProperty")
+def choiceParameterClass = optionalClass("org.biouno.unochoice.ChoiceParameter")
+def groovyScriptClass = optionalClass("org.biouno.unochoice.model.GroovyScript")
+def secureGroovyScriptClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.SecureGroovyScript")
+def scriptApprovalClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval")
+def approvalContextClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.ApprovalContext")
+def groovyLanguageClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.languages.GroovyLanguage")
 
 if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecClass && userRemoteConfigClass) {
   try {
+    def configureAddEmployeeRoleParameter = { pipelineJob, rolesUrl ->
+      if (!(parametersDefinitionPropertyClass && choiceParameterClass && groovyScriptClass && secureGroovyScriptClass && approvalContextClass)) {
+        println("[bootstrap] active choices classes unavailable; skipping dynamic role parameter for ${pipelineJob.name}")
+        return
+      }
+
+      def fallbackScriptText = "return ['Developer', 'Senior Developer', 'Superhero', 'AvD']"
+      def parameterScriptText = """
+import groovy.json.JsonSlurperClassic
+
+def rolesUrl = System.getenv('ADD_EMPLOYEE_FASTAPI_ROLES_URL') ?: '${rolesUrl}'
+def connection = new URL(rolesUrl).openConnection()
+connection.setConnectTimeout(5000)
+connection.setReadTimeout(5000)
+connection.setRequestProperty('Accept', 'application/json')
+def payload = connection.inputStream.withCloseable { it.getText('UTF-8') }
+def parsed = new JsonSlurperClassic().parseText(payload)
+def roles = (parsed instanceof List ? parsed : []).collect { item ->
+  item instanceof Map ? item.role?.toString() : null
+}.findAll { it }
+return roles ?: ['Developer', 'Senior Developer', 'Superhero', 'AvD']
+""".stripIndent().trim()
+
+      if (scriptApprovalClass && groovyLanguageClass) {
+        try {
+          def scriptApproval = scriptApprovalClass.get()
+          def groovyLanguage = groovyLanguageClass.get()
+          scriptApproval.preapprove(parameterScriptText, groovyLanguage)
+          scriptApproval.preapprove(fallbackScriptText, groovyLanguage)
+          scriptApproval.save()
+        } catch (Exception approvalError) {
+          println("[bootstrap] failed to preapprove add-employee parameter script: ${approvalError.class.simpleName}: ${approvalError.message}")
+        }
+      }
+
+      def approvalContext = approvalContextClass.create().withItem(pipelineJob)
+      def parameterScript = secureGroovyScriptClass
+        .newInstance(parameterScriptText, false, [])
+        .configuring(approvalContext)
+      def fallbackScript = secureGroovyScriptClass
+        .newInstance(fallbackScriptText, false, [])
+        .configuring(approvalContext)
+      def groovyScript = groovyScriptClass.newInstance(parameterScript, fallbackScript)
+      def parameter = choiceParameterClass.newInstance(
+        "EMPLOYEE_ROLE",
+        "Select role for Hans Wurst. Values are loaded from the FastAPI /roles API.",
+        "${pipelineJob.name}-employee-role".replaceAll("[^A-Za-z0-9._-]", "-"),
+        groovyScript,
+        "PT_SINGLE_SELECT",
+        false,
+        1
+      )
+
+      pipelineJob.removeProperty(parametersDefinitionPropertyClass)
+      pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance([parameter]))
+      println("[bootstrap] configured dynamic role parameter for ${pipelineJob.name}")
+    }
+
     def ensureManagedGitCredentials = { String credentialId, String username, String password, String credentialLabel ->
       if (!credentialId?.trim()) {
         return
@@ -242,6 +313,7 @@ if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecCl
       def gitCredentialsId = config.gitCredentialsId
       def gitUsername = config.gitUsername
       def gitPassword = config.gitPassword
+      def dynamicRoleChoicesUrl = config.dynamicRoleChoicesUrl
 
       if (!jobName?.trim()) {
         println("[bootstrap] skipped pipeline configuration due to empty job name")
@@ -293,6 +365,10 @@ Pipeline branch: ${branch}
 Pipeline script path: ${scriptPath}
 """.stripIndent()
       )
+
+      if (dynamicRoleChoicesUrl?.trim()) {
+        configureAddEmployeeRoleParameter(pipelineJob, dynamicRoleChoicesUrl)
+      }
 
       if (authToken?.trim()) {
         try {
@@ -356,6 +432,19 @@ Pipeline script path: ${scriptPath}
       gitCredentialsId: pipelineGitCredentialsId,
       gitUsername: pipelineGitUsername,
       gitPassword: pipelineGitPassword
+    ])
+
+    configurePipelineJob([
+      jobName: addEmployeePipelineJobName,
+      repoUrl: addEmployeePipelineRepoUrl,
+      branch: addEmployeePipelineBranch,
+      scriptPath: pipelineScriptPath,
+      authToken: addEmployeePipelineAuthToken,
+      autoTrigger: addEmployeePipelineAutoTrigger,
+      gitCredentialsId: pipelineGitCredentialsId,
+      gitUsername: pipelineGitUsername,
+      gitPassword: pipelineGitPassword,
+      dynamicRoleChoicesUrl: addEmployeeFastapiRolesUrl
     ])
   } catch (Exception e) {
     println("[bootstrap] pipeline job configuration skipped due to error: ${e.class.simpleName}: ${e.message}")

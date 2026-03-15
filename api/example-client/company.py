@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -14,7 +16,10 @@ API_DIR              = EXAMPLE_CLIENT_DIR.parent
 GRAPHQL_LIBRARY      = API_DIR / "graphql-library"
 GRAPHQL_LIBRARY_VENV = GRAPHQL_LIBRARY / ".venv" / "bin" / "python"
 GRAPHQL_LIBRARY_CODE = GRAPHQL_LIBRARY / "generated"
+GRAPHQL_CLIENT_FILE  = GRAPHQL_LIBRARY_CODE / "fastapi_graphql_client" / "client.py"
 DEFAULT_GRAPHQL_URL  = os.getenv("API_URL", "http://127.0.0.1:8000/graphql")
+DEFAULT_ROLES        = ("Developer", "Senior Developer", "Superhero", "AvD")
+BOOTSTRAP_ENV_VAR    = "COMPANY_CLIENT_BOOTSTRAPPED"
 
 
 FORCE_COLOR = os.getenv("FORCE_COLOR", "").strip().lower()
@@ -85,31 +90,95 @@ def employee_summary(
     employee_id: int,
     name: str,
     surname: str,
-    description: str,
+    role: str,
 ) -> str:
-    return f"{employee_id} ({name} {surname}, {description})"
+    return f"{employee_id} ({name} {surname}, {role})"
 
 
 def infer_mode(graphql_url: str) -> str:
     return "docker" if "host.docker.internal" in graphql_url else "bare"
 
 
-def ensure_runtime(graphql_url: str) -> None:
-    runtime_mode = infer_mode(graphql_url)
-
-    if GRAPHQL_LIBRARY_VENV.exists():
-        current_prefix = Path(sys.prefix).resolve()
-        target_prefix = (GRAPHQL_LIBRARY / ".venv").resolve()
-        if current_prefix != target_prefix:
-            os.execv(
-                str(GRAPHQL_LIBRARY_VENV),
-                [str(GRAPHQL_LIBRARY_VENV), __file__, *sys.argv[1:]],
-            )
-
-    if not GRAPHQL_LIBRARY_CODE.is_dir():
+def bootstrap_library_environment() -> None:
+    if os.getenv(BOOTSTRAP_ENV_VAR) == "1":
         fail(
-            f"Generated GraphQL library not found. Run 'make library-generate MODE={runtime_mode}' first.",
+            "GraphQL library environment bootstrap failed. Run 'make -C api library-generate MODE=bare' manually.",
             color=SOFT_RED,
+        )
+
+    try:
+        subprocess.run(
+            ["make", "-C", str(API_DIR), "library-generate", "MODE=bare"],
+            check=True,
+        )
+    except subprocess.CalledProcessError:
+        fail(
+            "GraphQL library environment bootstrap failed. Run 'make -C api library-generate MODE=bare' manually.",
+            color=SOFT_RED,
+        )
+
+
+def generated_client_is_current() -> bool:
+    if not GRAPHQL_CLIENT_FILE.is_file():
+        return False
+
+    client_source = GRAPHQL_CLIENT_FILE.read_text(encoding="utf-8")
+    return client_source_is_current(client_source)
+
+
+def client_source_is_current(client_source: str) -> bool:
+    required_methods = (
+        "def mutation_add_role(",
+        "def mutation_delete_role(",
+        "def query_roles(",
+    )
+    return all(method in client_source for method in required_methods)
+
+
+def installed_client_is_current() -> bool:
+    try:
+        spec = importlib.util.find_spec("fastapi_graphql_client.client")
+    except ModuleNotFoundError:
+        return False
+
+    if spec is None or spec.origin is None:
+        return False
+
+    client_file = Path(spec.origin)
+    if not client_file.is_file():
+        return False
+
+    return client_source_is_current(client_file.read_text(encoding="utf-8"))
+
+
+def ensure_runtime(graphql_url: str) -> None:
+    target_prefix = (GRAPHQL_LIBRARY / ".venv").resolve()
+    local_client_ready = (
+        GRAPHQL_LIBRARY_VENV.exists()
+        and GRAPHQL_LIBRARY_CODE.is_dir()
+        and generated_client_is_current()
+    )
+    current_prefix = Path(sys.prefix).resolve()
+
+    if current_prefix == target_prefix:
+        if not local_client_ready:
+            bootstrap_library_environment()
+        sys.path.insert(0, str(GRAPHQL_LIBRARY_CODE))
+        return
+
+    if installed_client_is_current():
+        return
+
+    if not local_client_ready:
+        bootstrap_library_environment()
+
+    if current_prefix != target_prefix:
+        env = os.environ.copy()
+        env[BOOTSTRAP_ENV_VAR] = "1"
+        os.execve(
+            str(GRAPHQL_LIBRARY_VENV),
+            [str(GRAPHQL_LIBRARY_VENV), __file__, *sys.argv[1:]],
+            env,
         )
 
     sys.path.insert(0, str(GRAPHQL_LIBRARY_CODE))
@@ -161,11 +230,19 @@ def render_employee_table(employees: list[dict[str, object]]) -> str:
             employee.get("employeeId", ""),
             employee.get("name", ""),
             employee.get("surname", ""),
-            employee.get("description", ""),
+            employee.get("role", ""),
         ]
         for employee in employees
     ]
-    return table(["Employee ID", "Name", "Surname", "Description"], rows)
+    return table(["Employee ID", "Name", "Surname", "Role"], rows)
+
+
+def render_roles_table(roles: list[dict[str, object]]) -> str:
+    if not roles:
+        return colorize("(no roles)", GREY)
+
+    rows = [[role.get("role", "")] for role in roles]
+    return table(["Role"], rows)
 
 
 def render_key_value_table(values: dict[str, object]) -> str:
@@ -186,6 +263,10 @@ def render_workflow_result(payload: object) -> str:
             employees = data["employees"]
             if isinstance(employees, list):
                 return render_employee_table(employees)
+        if "roles" in data:
+            roles = data["roles"]
+            if isinstance(roles, list):
+                return render_roles_table(roles)
         return render_key_value_table(data)
 
     return colorize(str(data), GREEN2)
@@ -211,19 +292,27 @@ def build_parser() -> argparse.ArgumentParser:
     add_parser.add_argument("--employee-id", type=int, default=int(time.time()))
     add_parser.add_argument("--employee-name", required=True)
     add_parser.add_argument("--employee-surname", required=True)
-    add_parser.add_argument("--employee-description", default="")
+    add_parser.add_argument("--employee-role", default=DEFAULT_ROLES[0])
     add_parser.set_defaults(handler=add_employee)
 
     update_parser = subparsers.add_parser("update-employee")
     update_parser.add_argument("--employee-id", type=int, required=True)
     update_parser.add_argument("--employee-name", required=False)
     update_parser.add_argument("--employee-surname", required=False)
-    update_parser.add_argument("--employee-description", required=False)
+    update_parser.add_argument("--employee-role", required=False)
     update_parser.set_defaults(handler=update_employee)
 
     delete_parser = subparsers.add_parser("delete-employee")
     delete_parser.add_argument("--employee-id", type=int, required=True)
     delete_parser.set_defaults(handler=delete_employee)
+
+    add_role_parser = subparsers.add_parser("add-role")
+    add_role_parser.add_argument("--role", required=True)
+    add_role_parser.set_defaults(handler=add_role)
+
+    delete_role_parser = subparsers.add_parser("delete-role")
+    delete_role_parser.add_argument("--role", required=True)
+    delete_role_parser.set_defaults(handler=delete_role)
 
     show_parser = subparsers.add_parser("get-employee")
     show_parser.add_argument("--employee-id", type=int, required=True)
@@ -232,14 +321,17 @@ def build_parser() -> argparse.ArgumentParser:
     show_all_parser = subparsers.add_parser("get-all-employees")
     show_all_parser.set_defaults(handler=get_all_employees)
 
+    roles_parser = subparsers.add_parser("get-roles")
+    roles_parser.set_defaults(handler=get_roles)
+
     workflow_parser = subparsers.add_parser("workflow")
     workflow_parser.add_argument("--employee-id", type=int, default=int(time.time()))
     workflow_parser.add_argument("--employee-name", default="Max")
     workflow_parser.add_argument("--employee-surname", default="Mustermann")
-    workflow_parser.add_argument("--employee-description", default="Developer")
+    workflow_parser.add_argument("--employee-role", default=DEFAULT_ROLES[0])
     workflow_parser.add_argument("--updated-employee-name", default="Max")
     workflow_parser.add_argument("--updated-employee-surname", default="Mustermann")
-    workflow_parser.add_argument("--updated-employee-description", default="Senior Developer")
+    workflow_parser.add_argument("--updated-employee-role", default=DEFAULT_ROLES[1])
     workflow_parser.set_defaults(handler=workflow)
 
     return parser
@@ -253,7 +345,7 @@ def add_employee(args: argparse.Namespace) -> object:
             employee_id=args.employee_id,
             name=args.employee_name,
             surname=args.employee_surname,
-            description=args.employee_description,
+            role=args.employee_role,
         )
 
 
@@ -265,7 +357,7 @@ def update_employee(args: argparse.Namespace) -> object:
             employee_id=args.employee_id,
             name=args.employee_name,
             surname=args.employee_surname,
-            description=args.employee_description,
+            role=args.employee_role,
         )
 
 
@@ -274,6 +366,20 @@ def delete_employee(args: argparse.Namespace) -> object:
 
     with FastAPIGraphQLClient(url=args.graphql_url) as client:
         return client.mutation_delete_employee(employee_id=args.employee_id)
+
+
+def add_role(args: argparse.Namespace) -> object:
+    from fastapi_graphql_client import FastAPIGraphQLClient
+
+    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+        return client.mutation_add_role(role=args.role)
+
+
+def delete_role(args: argparse.Namespace) -> object:
+    from fastapi_graphql_client import FastAPIGraphQLClient
+
+    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+        return client.mutation_delete_role(role=args.role)
 
 
 def get_employee(args: argparse.Namespace) -> object:
@@ -288,6 +394,13 @@ def get_all_employees(args: argparse.Namespace) -> object:
 
     with FastAPIGraphQLClient(url=args.graphql_url) as client:
         return client.query_employees()
+
+
+def get_roles(args: argparse.Namespace) -> object:
+    from fastapi_graphql_client import FastAPIGraphQLClient
+
+    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+        return client.query_roles()
 
 
 def workflow(args: argparse.Namespace) -> object:
@@ -309,7 +422,7 @@ def workflow(args: argparse.Namespace) -> object:
                         args.employee_id,
                         args.employee_name,
                         args.employee_surname,
-                        args.employee_description,
+                        args.employee_role,
                     )
                     + "..."
                 )
@@ -317,7 +430,7 @@ def workflow(args: argparse.Namespace) -> object:
                     employee_id=args.employee_id,
                     name=args.employee_name,
                     surname=args.employee_surname,
-                    description=args.employee_description,
+                    role=args.employee_role,
                 )
                 created = True
                 print_workflow_success(result)
@@ -338,14 +451,14 @@ def workflow(args: argparse.Namespace) -> object:
                         args.employee_id,
                         args.employee_name,
                         args.employee_surname,
-                        args.employee_description,
+                        args.employee_role,
                     )
                     + " to become "
                     + employee_summary(
                         args.employee_id,
                         args.updated_employee_name,
                         args.updated_employee_surname,
-                        args.updated_employee_description,
+                        args.updated_employee_role,
                     )
                     + "..."
                 )
@@ -353,7 +466,7 @@ def workflow(args: argparse.Namespace) -> object:
                     employee_id=args.employee_id,
                     name=args.updated_employee_name,
                     surname=args.updated_employee_surname,
-                    description=args.updated_employee_description,
+                    role=args.updated_employee_role,
                 )
                 print_workflow_success(result)
             except GraphQLClientGraphQLMultiError as error:
@@ -381,7 +494,7 @@ def workflow(args: argparse.Namespace) -> object:
                             args.employee_id,
                             args.updated_employee_name,
                             args.updated_employee_surname,
-                            args.updated_employee_description,
+                            args.updated_employee_role,
                         )
                         + "..."
                     )

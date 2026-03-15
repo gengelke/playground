@@ -76,6 +76,13 @@ if [[ ! -f playground/api/example-client/company.py ]]; then
   echo "Expected playground/api/example-client/company.py after checkout"
   exit 1
 fi
+
+banner "Validate Example Client CLI"
+if ! (cd playground/api && example-client/company.py workflow --help >/dev/null 2>&1); then
+  echo "The checked-out source at ${source_repo_url} branch ${source_branch} does not provide the workflow command in api/example-client/company.py."
+  echo "Push the updated source to that branch or override LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL / LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH."
+  exit 1
+fi
 '''
       }
     }
@@ -144,7 +151,8 @@ PY
 banner "Run Example Client"
 
 FORCE_COLOR=1 python api/example-client/company.py \
-  --graphql-url "${LIBRARY_EXAMPLE_CLIENT_GRAPHQL_URL:-http://127.0.0.1:8000/graphql}"
+  --graphql-url "${LIBRARY_EXAMPLE_CLIENT_GRAPHQL_URL:-http://127.0.0.1:8000/graphql}" \
+  workflow
 '''
       }
     }

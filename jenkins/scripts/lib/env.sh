@@ -51,6 +51,24 @@ DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL="${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_
 LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
 PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${PROD_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
 DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH="${DEV_LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-}"
+ADD_EMPLOYEE_PIPELINE_REPO_URL="${ADD_EMPLOYEE_PIPELINE_REPO_URL:-}"
+PROD_ADD_EMPLOYEE_PIPELINE_REPO_URL="${PROD_ADD_EMPLOYEE_PIPELINE_REPO_URL:-}"
+DEV_ADD_EMPLOYEE_PIPELINE_REPO_URL="${DEV_ADD_EMPLOYEE_PIPELINE_REPO_URL:-}"
+ADD_EMPLOYEE_PIPELINE_BRANCH="${ADD_EMPLOYEE_PIPELINE_BRANCH:-}"
+PROD_ADD_EMPLOYEE_PIPELINE_BRANCH="${PROD_ADD_EMPLOYEE_PIPELINE_BRANCH:-}"
+DEV_ADD_EMPLOYEE_PIPELINE_BRANCH="${DEV_ADD_EMPLOYEE_PIPELINE_BRANCH:-}"
+ADD_EMPLOYEE_SOURCE_REPO_URL="${ADD_EMPLOYEE_SOURCE_REPO_URL:-}"
+PROD_ADD_EMPLOYEE_SOURCE_REPO_URL="${PROD_ADD_EMPLOYEE_SOURCE_REPO_URL:-}"
+DEV_ADD_EMPLOYEE_SOURCE_REPO_URL="${DEV_ADD_EMPLOYEE_SOURCE_REPO_URL:-}"
+ADD_EMPLOYEE_SOURCE_BRANCH="${ADD_EMPLOYEE_SOURCE_BRANCH:-}"
+PROD_ADD_EMPLOYEE_SOURCE_BRANCH="${PROD_ADD_EMPLOYEE_SOURCE_BRANCH:-}"
+DEV_ADD_EMPLOYEE_SOURCE_BRANCH="${DEV_ADD_EMPLOYEE_SOURCE_BRANCH:-}"
+ADD_EMPLOYEE_FASTAPI_ROLES_URL="${ADD_EMPLOYEE_FASTAPI_ROLES_URL:-}"
+PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL="${PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL:-}"
+DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL="${DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL:-}"
+ADD_EMPLOYEE_GRAPHQL_URL="${ADD_EMPLOYEE_GRAPHQL_URL:-}"
+PROD_ADD_EMPLOYEE_GRAPHQL_URL="${PROD_ADD_EMPLOYEE_GRAPHQL_URL:-}"
+DEV_ADD_EMPLOYEE_GRAPHQL_URL="${DEV_ADD_EMPLOYEE_GRAPHQL_URL:-}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
@@ -61,6 +79,9 @@ GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER="${GENERATE_LIBRARY_PIPELINE_AUTO_TRIGGER
 LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_JOB_NAME:-library-example-client}"
 LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTH_TOKEN:-}"
 LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER:-false}"
+ADD_EMPLOYEE_PIPELINE_JOB_NAME="${ADD_EMPLOYEE_PIPELINE_JOB_NAME:-add-employee}"
+ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN="${ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN:-}"
+ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER="${ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER:-false}"
 
 AGENT_COUNT="${AGENT_COUNT:-2}"
 AGENT_EXECUTORS="${AGENT_EXECUTORS:-1}"
@@ -440,6 +461,199 @@ resolve_instance_library_example_client_source_branch() {
   esac
 
   resolve_instance_library_example_client_pipeline_branch "$instance"
+}
+
+resolve_instance_add_employee_pipeline_repo_url() {
+  local mode="$1"
+  local instance="$2"
+
+  if [[ -n "${ADD_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_PIPELINE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_ADD_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_ADD_EMPLOYEE_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/add-employee' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/add-employee' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    dev)
+      if [[ -n "${DEV_ADD_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_ADD_EMPLOYEE_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/add-employee' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/add-employee' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_add_employee_pipeline_branch() {
+  local instance="$1"
+
+  if [[ -n "${ADD_EMPLOYEE_PIPELINE_BRANCH}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_PIPELINE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod) printf '%s' "${PROD_ADD_EMPLOYEE_PIPELINE_BRANCH:-${PROD_BRANCH}}" ;;
+    dev) printf '%s' "${DEV_ADD_EMPLOYEE_PIPELINE_BRANCH:-${DEV_BRANCH}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_add_employee_source_repo_url() {
+  local instance="$1"
+
+  if [[ -n "${ADD_EMPLOYEE_SOURCE_REPO_URL}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_SOURCE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_ADD_EMPLOYEE_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_ADD_EMPLOYEE_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_ADD_EMPLOYEE_SOURCE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_ADD_EMPLOYEE_SOURCE_REPO_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' 'https://github.com/gengelke/playground.git'
+}
+
+resolve_instance_add_employee_source_branch() {
+  local instance="$1"
+
+  if [[ -n "${ADD_EMPLOYEE_SOURCE_BRANCH}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_SOURCE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_ADD_EMPLOYEE_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${PROD_ADD_EMPLOYEE_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_ADD_EMPLOYEE_SOURCE_BRANCH}" ]]; then
+        printf '%s' "${DEV_ADD_EMPLOYEE_SOURCE_BRANCH}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  resolve_instance_add_employee_pipeline_branch "$instance"
+}
+
+resolve_instance_add_employee_fastapi_roles_url() {
+  local mode="$1"
+  local instance="$2"
+
+  if [[ -n "${ADD_EMPLOYEE_FASTAPI_ROLES_URL}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_FASTAPI_ROLES_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL}" ]]; then
+        printf '%s' "${PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL}" ]]; then
+        printf '%s' "${DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  case "$mode" in
+    docker) printf 'http://host.docker.internal:8000/roles' ;;
+    bare) printf 'http://127.0.0.1:8000/roles' ;;
+    *)
+      echo "unknown mode: ${mode}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_add_employee_graphql_url() {
+  local instance="$1"
+
+  if [[ -n "${ADD_EMPLOYEE_GRAPHQL_URL}" ]]; then
+    printf '%s' "${ADD_EMPLOYEE_GRAPHQL_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_ADD_EMPLOYEE_GRAPHQL_URL}" ]]; then
+        printf '%s' "${PROD_ADD_EMPLOYEE_GRAPHQL_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_ADD_EMPLOYEE_GRAPHQL_URL}" ]]; then
+        printf '%s' "${DEV_ADD_EMPLOYEE_GRAPHQL_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  printf '%s' 'http://127.0.0.1:8000/graphql'
 }
 
 read_env_file_value() {
