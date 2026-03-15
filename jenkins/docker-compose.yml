@@ -6,6 +6,8 @@ services:
     restart: unless-stopped
     environment:
       JENKINS_OPTS: --httpPort=8080 --httpListenAddress=0.0.0.0
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Duser.timezone=${JENKINS_TIMEZONE:-Europe/Berlin}
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_INSTANCE_NAME: jenkins-prod
       JENKINS_ROOT_URL: ${PROD_JENKINS_ROOT_URL:-http://127.0.0.1:8081/}
       PIPELINE_REPO_URL: ${PROD_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/jenkins-example}
@@ -53,6 +55,8 @@ services:
     restart: unless-stopped
     environment:
       JENKINS_OPTS: --httpPort=8080 --httpListenAddress=0.0.0.0
+      JAVA_OPTS: -Djenkins.install.runSetupWizard=false -Duser.timezone=${JENKINS_TIMEZONE:-Europe/Berlin}
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_INSTANCE_NAME: jenkins-dev
       JENKINS_ROOT_URL: ${DEV_JENKINS_ROOT_URL:-http://127.0.0.1:8082/}
       PIPELINE_REPO_URL: ${DEV_PIPELINE_REPO_URL:-http://host.docker.internal:3000/myuser/jenkins-example}
@@ -101,6 +105,7 @@ services:
     user: "0:0"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_URL: http://jenkins-prod:8080/
       JENKINS_AGENT_NAME: jenkins-prod-agent-1
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -124,6 +129,7 @@ services:
     user: "0:0"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_URL: http://jenkins-prod:8080/
       JENKINS_AGENT_NAME: jenkins-prod-agent-2
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -147,6 +153,7 @@ services:
     user: "0:0"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_URL: http://jenkins-dev:8080/
       JENKINS_AGENT_NAME: jenkins-dev-agent-1
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}
@@ -170,6 +177,7 @@ services:
     user: "0:0"
     environment:
       DOCKER_HOST: unix:///var/run/docker.sock
+      TZ: ${JENKINS_TIMEZONE:-Europe/Berlin}
       JENKINS_URL: http://jenkins-dev:8080/
       JENKINS_AGENT_NAME: jenkins-dev-agent-2
       JENKINS_ADMIN_USER: ${JENKINS_ADMIN_USER:-admin}

@@ -42,6 +42,19 @@ make run MODE=bare
 - `MODE=docker` runs the example client in a container.
 - `MODE=bare` runs it locally and will regenerate the bare-mode library environment if it is missing.
 
+Run the minimal generated-library CLI directly from `api/`:
+
+```bash
+./example-client-NG add-employee --employee-name Erika --employee-surname Mustermann
+./example-client-NG update-employee --employee-id 4711 --employee-name Erika --employee-surname Mustermann --employee-description EG16
+./example-client-NG delete-employee --employee-id 4711
+./example-client-NG show-employee --employee-id 4711
+./example-client-NG show-all-employees
+./example-client-NG workflow --employee-name Erika --employee-surname Mustermann
+```
+
+It uses the generated GraphQL library directly and prints JSON results.
+
 ## Generated Artifacts
 
 The API area generates local state in these locations:

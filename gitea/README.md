@@ -91,7 +91,7 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - checks out the configured library-example-client source repo (default `https://github.com/gengelke/playground.git`)
   - starts the FastAPI service in bare mode
   - installs `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`
-  - runs `api/example-client/employee_workflow.py` using the installed package
+  - runs `api/example-client/company.py` using the installed package
 - The runner registration token is generated directly from Gitea during bootstrap, persisted in `runtime/shared/generated.env`, and synced to Vault.
 - In bare mode, runners are registered once and persisted under `runtime/bare/runner1` and `runtime/bare/runner2`.
 - Bootstrap values/secrets are persisted in `runtime/shared/generated.env`.

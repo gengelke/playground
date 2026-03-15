@@ -72,8 +72,8 @@ git clone --depth 1 --branch "$source_branch" "$source_repo_url" playground
 
 banner "Validate Example Client Source"
 
-if [[ ! -f playground/api/example-client/employee_workflow.py ]]; then
-  echo "Expected playground/api/example-client/employee_workflow.py after checkout"
+if [[ ! -f playground/api/example-client/company.py ]]; then
+  echo "Expected playground/api/example-client/company.py after checkout"
   exit 1
 fi
 '''
@@ -143,7 +143,7 @@ PY
 
 banner "Run Example Client"
 
-FORCE_COLOR=1 python api/example-client/employee_workflow.py \
+FORCE_COLOR=1 python api/example-client/company.py \
   --graphql-url "${LIBRARY_EXAMPLE_CLIENT_GRAPHQL_URL:-http://127.0.0.1:8000/graphql}"
 '''
       }

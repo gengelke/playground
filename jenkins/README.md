@@ -40,7 +40,7 @@ Both Jenkins instances automatically create and run a pipeline job from git:
 - Both instances check out with Jenkins-managed credentials (`pipeline-git-prod` / `pipeline-git-dev`) when available
 - The default `jenkins-example` pipeline Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
 - Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), run `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, and upload it to the Nexus PyPI repo `pypi-public`
-- Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/employee_workflow.py` using that installed package
+- Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py` using that installed package
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
 
 To use your own git repo as Repo A:
@@ -165,6 +165,7 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `JENKINS_REGULAR_PASSWORD` (default `password`)
 - `JENKINS_REGULAR_API_TOKEN_NAME` (default `jenkins-api-token`)
 - `JENKINS_CSP` (optional override; leave unset to use Jenkins default and avoid DirectoryBrowserSupport.CSP warning)
+- `JENKINS_TIMEZONE` (default `Europe/Berlin`)
 - `VAULT_ADDR` (auto-resolved; docker defaults to `http://host.docker.internal:8200`)
 - `VAULT_TOKEN` (auto-resolved from `../vault/.vault/credentials.env` when available)
 - `NEXUS_PYPI_REPO` (optional; default `pypi-public` in the generated Jenkinsfile)

@@ -13,8 +13,12 @@ from strawberry.fastapi import GraphQLRouter
 
 
 # Prefer mounted Docker path if available; otherwise keep the sqlite file in fastapi/.
-default_db_path = Path("/data/company.sqlite") if Path("/data").exists() else Path(__file__).resolve().parent / "company.sqlite"
-DATABASE = os.getenv("DATABASE_PATH", str(default_db_path))
+APP_DIR = Path(__file__).resolve().parent
+default_db_path = Path("/data/company.sqlite") if Path("/data").exists() else APP_DIR / "company.sqlite"
+database_path = Path(os.getenv("DATABASE_PATH", str(default_db_path)))
+if not database_path.is_absolute():
+    database_path = APP_DIR / database_path
+DATABASE = str(database_path)
 DATABASE_INIT_LOCK = Lock()
 DATABASE_INITIALIZED = False
 
@@ -24,6 +28,7 @@ DATABASE_INITIALIZED = False
 # =====================================================
 
 def open_connection():
+    Path(DATABASE).parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DATABASE)
     connection.row_factory = sqlite3.Row
     return connection

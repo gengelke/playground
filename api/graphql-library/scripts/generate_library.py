@@ -234,7 +234,7 @@ def build_codegen_config(schema_path: Path, operations_dir: Path, output_dir: Pa
             f'client_name = "{CLIENT_NAME}"',
             'include_comments = "stable"',
             "convert_to_snake_case = true",
-            "async_client = true",
+            "async_client = false",
         )
     )
 

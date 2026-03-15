@@ -91,12 +91,14 @@ start_controller() {
     export JENKINS_REGULAR_USER="$JENKINS_REGULAR_USER"
     export JENKINS_REGULAR_PASSWORD="$JENKINS_REGULAR_PASSWORD"
     export JENKINS_CSP="$JENKINS_CSP"
+    export TZ="$JENKINS_TIMEZONE"
     export VAULT_ADDR="$VAULT_ADDR"
     export VAULT_TOKEN="$VAULT_TOKEN"
     export NEXUS_PYPI_REPO="$NEXUS_PYPI_REPO"
 
     nohup "$JAVA_BIN" \
       -Djenkins.install.runSetupWizard=false \
+      -Duser.timezone="$JENKINS_TIMEZONE" \
       -jar "$JENKINS_WAR_PATH" \
       --httpPort="$port" \
       --httpListenAddress=127.0.0.1 \
@@ -190,7 +192,7 @@ start_agent() {
   secret="$(fetch_agent_secret "$instance" "$index")"
 
   echo "Starting ${node_name}"
-  nohup "$JAVA_BIN" -jar "$agent_jar" \
+  TZ="$JENKINS_TIMEZONE" nohup "$JAVA_BIN" -Duser.timezone="$JENKINS_TIMEZONE" -jar "$agent_jar" \
     -url "$base_url" \
     -name "$node_name" \
     -secret "$secret" \

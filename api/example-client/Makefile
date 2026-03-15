@@ -44,21 +44,16 @@ run:
 
 bare-run:
 	@if [[ ! -x "$(GRAPHQL_LIBRARY_VENV_PYTHON)" ]]; then \
-		if [[ -d "$(GRAPHQL_LIBRARY_GENERATED_DIR)/fastapi_graphql_client" ]]; then \
-			echo "GraphQL library environment not found for bare mode. The client appears to have been generated in docker mode; run 'make library-generate MODE=bare' first." >&2; \
-		else \
-			echo "GraphQL library environment not found. Run 'make library-generate MODE=bare' first." >&2; \
-		fi; \
-		exit 1; \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" generate MODE="bare" API_PORT="$(API_PORT)"; \
 	fi
 	@if [[ ! -d "$(GRAPHQL_LIBRARY_GENERATED_DIR)/fastapi_graphql_client" ]]; then \
-		echo "Generated GraphQL library not found. Run 'make library-generate MODE=bare' first." >&2; \
-		exit 1; \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" generate MODE="bare" API_PORT="$(API_PORT)"; \
 	fi
 	@cd "$(MAKEFILE_DIR)" && \
 		PYTHONPATH="$(GRAPHQL_LIBRARY_GENERATED_DIR)${PYTHONPATH:+:$$PYTHONPATH}" \
-		"$(GRAPHQL_LIBRARY_VENV_PYTHON)" employee_workflow.py \
+		"$(GRAPHQL_LIBRARY_VENV_PYTHON)" company.py \
 			--graphql-url "$(GRAPHQL_URL)" \
+			workflow \
 			$(if $(EMPLOYEE_ID),--employee-id "$(EMPLOYEE_ID)",) \
 			$(if $(EMPLOYEE_NAME),--employee-name "$(EMPLOYEE_NAME)",) \
 			$(if $(EMPLOYEE_SURNAME),--employee-surname "$(EMPLOYEE_SURNAME)",) \
@@ -69,8 +64,7 @@ bare-run:
 
 docker-run:
 	@if [[ ! -d "$(GRAPHQL_LIBRARY_GENERATED_DIR)/fastapi_graphql_client" ]]; then \
-		echo "Generated GraphQL library not found. Run 'make library-generate MODE=docker' first." >&2; \
-		exit 1; \
+		$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" generate MODE="docker" API_PORT="$(API_PORT)"; \
 	fi
 	@$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" docker-deps MODE="docker" API_PORT="$(API_PORT)"
 	@$(DOCKER) run --rm \
@@ -79,8 +73,9 @@ docker-run:
 		-w "$(DOCKER_WORKDIR)" \
 		"$(DOCKER_IMAGE)" \
 		env FORCE_COLOR=1 PYTHONPATH="$(DOCKER_API_DIR)/graphql-library/generated" \
-		python employee_workflow.py \
+		python company.py \
 			--graphql-url "$(GRAPHQL_URL)" \
+			workflow \
 			$(if $(EMPLOYEE_ID),--employee-id "$(EMPLOYEE_ID)",) \
 			$(if $(EMPLOYEE_NAME),--employee-name "$(EMPLOYEE_NAME)",) \
 			$(if $(EMPLOYEE_SURNAME),--employee-surname "$(EMPLOYEE_SURNAME)",) \
@@ -118,5 +113,7 @@ help:
 		"  make run-local [EMPLOYEE_ID=12345] [EMPLOYEE_NAME=...] [...]" \
 		"  make distclean" \
 		"" \
+		"'make run' executes 'company.py workflow'." \
+		"If generated library artifacts are missing, they are created automatically for the selected MODE." \
 		"MODE=docker runs the example client in a container." \
 		"MODE=bare runs it via the local GraphQL library virtualenv."

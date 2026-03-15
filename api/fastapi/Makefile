@@ -26,6 +26,7 @@ PID_FILE ?= $(BARE_STATE_DIR)/fastapi.pid
 LOG_FILE ?= $(BARE_STATE_DIR)/fastapi.log
 DOCKER_DATA_DIR ?= $(MAKEFILE_DIR)data
 DATABASE_PATH ?= $(MAKEFILE_DIR)company.sqlite
+LEGACY_DATABASE_PATH ?= $(API_DIR)/company.sqlite
 
 .PHONY: help build up down restart logs status run clean distclean \
 	check-mode venv deps \
@@ -176,7 +177,7 @@ clean:
 	@rm -rf "$(RUNTIME_DIR)"
 
 distclean: clean
-	@rm -rf "$(VENV_DIR)" "$(DOCKER_DATA_DIR)" "$(DATABASE_PATH)"
+	@rm -rf "$(VENV_DIR)" "$(DOCKER_DATA_DIR)" "$(DATABASE_PATH)" "$(LEGACY_DATABASE_PATH)"
 
 help:
 	@printf "%s\n" \
@@ -192,4 +193,5 @@ help:
 		"  MODE=$(MODE)" \
 		"  API_PORT=$(API_PORT)" \
 		"  API_URL=$(API_URL)" \
-		"  DATABASE_PATH=$(DATABASE_PATH)"
+		"  DATABASE_PATH=$(DATABASE_PATH)" \
+		"  LEGACY_DATABASE_PATH=$(LEGACY_DATABASE_PATH)"
