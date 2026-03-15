@@ -151,6 +151,188 @@ envfile_set() {
   mv "$tmp" "$file"
 }
 
+json_escape() {
+  local s="${1:-}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '%s' "$s"
+}
+
+resolve_example_workflow_service_host() {
+  case "${MODE:-docker}" in
+    docker) printf '%s' "host.docker.internal" ;;
+    *) printf '%s' "127.0.0.1" ;;
+  esac
+}
+
+rewrite_service_url_for_host() {
+  local url="$1"
+  local host="$2"
+
+  printf '%s' "$url" | sed \
+    -e "s#http://localhost#http://${host}#g" \
+    -e "s#http://127.0.0.1#http://${host}#g" \
+    -e "s#https://localhost#https://${host}#g" \
+    -e "s#https://127.0.0.1#https://${host}#g"
+}
+
+resolve_example_workflow_vault_addr() {
+  local creds_file="${ROOT_DIR}/../vault/.vault/credentials.env"
+  local host
+  host="$(resolve_example_workflow_service_host)"
+  local value="${VAULT_ADDR:-}"
+
+  if [[ -z "$value" ]]; then
+    value="$(envfile_get "$creds_file" "VAULT_ADDR" || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    value="http://127.0.0.1:8200"
+  fi
+
+  rewrite_service_url_for_host "$value" "$host"
+}
+
+resolve_example_workflow_vault_token() {
+  local creds_file="${ROOT_DIR}/../vault/.vault/credentials.env"
+  local value="${VAULT_TOKEN:-${VAULT_ROOT_TOKEN:-}}"
+
+  if [[ -z "$value" ]]; then
+    value="$(envfile_get "$creds_file" "VAULT_TOKEN" || true)"
+  fi
+  if [[ -z "$value" ]]; then
+    value="$(envfile_get "$creds_file" "VAULT_ROOT_TOKEN" || true)"
+  fi
+
+  printf '%s' "$value"
+}
+
+resolve_example_workflow_graphql_url() {
+  local host
+  host="$(resolve_example_workflow_service_host)"
+  local value="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_GRAPHQL_URL:-}"
+
+  if [[ -z "$value" ]]; then
+    value="http://127.0.0.1:8000/graphql"
+  fi
+
+  rewrite_service_url_for_host "$value" "$host"
+}
+
+resolve_add_employee_workflow_graphql_url() {
+  local host
+  host="$(resolve_example_workflow_service_host)"
+  local value="${GITEA_ADD_EMPLOYEE_WORKFLOW_GRAPHQL_URL:-}"
+
+  if [[ -z "$value" ]]; then
+    value="http://127.0.0.1:8000/graphql"
+  fi
+
+  rewrite_service_url_for_host "$value" "$host"
+}
+
+ensure_repo_actions_secret() {
+  local instance_url="$1"
+  local owner="$2"
+  local password="$3"
+  local repo_name="$4"
+  local secret_name="$5"
+  local secret_value="$6"
+  local description="$7"
+
+  [[ -n "$secret_value" ]] || die "Cannot set empty Actions secret '${secret_name}' for '${owner}/${repo_name}'"
+
+  local payload
+  payload="$(printf '{"data":"%s","description":"%s"}' \
+    "$(json_escape "$secret_value")" \
+    "$(json_escape "$description")")"
+
+  local body_file
+  body_file="$(mktemp)"
+  local status
+  status="$(curl -sS -o "$body_file" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X PUT \
+    --data "$payload" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}/actions/secrets/${secret_name}" || true)"
+
+  if [[ "$status" != "201" && "$status" != "204" ]]; then
+    cat "$body_file" >&2 || true
+    rm -f "$body_file"
+    die "Failed to ensure Actions secret '${secret_name}' for '${owner}/${repo_name}' (HTTP ${status})"
+  fi
+  rm -f "$body_file"
+}
+
+ensure_repo_file_in_branch() {
+  local instance_url="$1"
+  local owner="$2"
+  local password="$3"
+  local repo_name="$4"
+  local file_path="$5"
+  local target_branch="$6"
+  local commit_message="$7"
+  local content="$8"
+
+  local file_url="${instance_url}/api/v1/repos/${owner}/${repo_name}/contents/${file_path}"
+  local content_b64
+  content_b64="$(printf '%s' "$content" | base64 | tr -d '\n')"
+
+  local get_body
+  get_body="$(mktemp)"
+  local get_status
+  get_status="$(curl -sS -o "$get_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${file_url}?ref=${target_branch}" || true)"
+
+  local existing_sha=""
+  if [[ "$get_status" == "200" ]]; then
+    existing_sha="$(tr -d '\n' <"$get_body" | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  elif [[ "$get_status" != "404" ]]; then
+    cat "$get_body" >&2 || true
+    rm -f "$get_body"
+    die "Failed to query ${file_path} in branch '${target_branch}' for '${owner}/${repo_name}' (HTTP ${get_status})"
+  fi
+  rm -f "$get_body"
+
+  local payload
+  local write_method
+  if [[ -n "$existing_sha" ]]; then
+    payload="$(printf '{"content":"%s","message":"%s","branch":"%s","sha":"%s"}' \
+      "$content_b64" \
+      "$(json_escape "$commit_message")" \
+      "$target_branch" \
+      "$existing_sha")"
+    write_method="PUT"
+  else
+    payload="$(printf '{"content":"%s","message":"%s","branch":"%s"}' \
+      "$content_b64" \
+      "$(json_escape "$commit_message")" \
+      "$target_branch")"
+    write_method="POST"
+  fi
+
+  local write_body
+  write_body="$(mktemp)"
+  local write_status
+  write_status="$(curl -sS -o "$write_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X "$write_method" \
+    --data "$payload" \
+    "$file_url" || true)"
+
+  if [[ "$write_status" != "200" && "$write_status" != "201" ]]; then
+    cat "$write_body" >&2 || true
+    rm -f "$write_body"
+    die "Failed to ensure ${file_path} in branch '${target_branch}' for '${owner}/${repo_name}' (HTTP ${write_status})"
+  fi
+  rm -f "$write_body"
+}
+
 sync_credentials_to_vault() {
   local vault_helper="${ROOT_DIR}/../vault/scripts/kv-put.sh"
   local gitea_root_url="${GITEA_ROOT_URL:-http://localhost:${GITEA_HTTP_PORT:-3000}/}"
@@ -337,20 +519,20 @@ generate_and_persist_runner_token() {
 
 ensure_bootstrap_repositories() {
   remove_example_workflow_repo
-  ensure_example_workflow_repo
-  ensure_jenkins_example_repo
+  ensure_example_pipeline_repo
+  ensure_example_pipeline_gitea_workflow
   ensure_generate_library_repo
   ensure_library_example_client_repo
   ensure_add_employee_repo
 }
 
-ensure_example_workflow_repo() {
-  local auto_add="${GITEA_AUTO_ADD_EXAMPLE_WORKFLOW:-true}"
+ensure_example_pipeline_gitea_workflow() {
+  local auto_add="${GITEA_AUTO_ADD_EXAMPLE_PIPELINE_WORKFLOW:-${GITEA_AUTO_ADD_EXAMPLE_WORKFLOW:-true}}"
   auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
   case "$auto_add" in
     1|true|yes|on) ;;
     *)
-      log "Skipping example workflow setup (GITEA_AUTO_ADD_EXAMPLE_WORKFLOW=${GITEA_AUTO_ADD_EXAMPLE_WORKFLOW:-false})"
+      log "Skipping example-pipeline workflow setup (GITEA_AUTO_ADD_EXAMPLE_PIPELINE_WORKFLOW=${GITEA_AUTO_ADD_EXAMPLE_PIPELINE_WORKFLOW:-false})"
       return 0
       ;;
   esac
@@ -361,33 +543,31 @@ ensure_example_workflow_repo() {
 
   local owner="${GITEA_USER:-myuser}"
   local password="${GITEA_USER_PASSWORD:-password}"
-  local repo_name="${GITEA_EXAMPLE_REPO:-actions-example}"
-  local file_path=".gitea/workflows/actions-example.yml"
-  local file_url="${instance_url}/api/v1/repos/${owner}/${repo_name}/contents/${file_path}"
+  local repo_name="${GITEA_EXAMPLE_PIPELINE_REPO:-example-pipeline}"
+  local file_path=".gitea/workflows/example-pipeline.yml"
 
-  local create_body
-  create_body="$(mktemp)"
-  local create_payload
-  create_payload="$(printf '{"name":"%s","auto_init":true,"private":true}' "$repo_name")"
-
-  local create_status
-  create_status="$(curl -sS -o "$create_body" -w '%{http_code}' \
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
     --user "${owner}:${password}" \
-    -H 'Content-Type: application/json' \
-    -X POST \
-    --data "$create_payload" \
-    "${instance_url}/api/v1/user/repos" || true)"
-
-  if [[ "$create_status" != "201" && "$create_status" != "409" ]]; then
-    cat "$create_body" >&2 || true
-    rm -f "$create_body"
-    die "Failed to create example repository '${owner}/${repo_name}' (HTTP ${create_status})"
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
   fi
-  rm -f "$create_body"
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
 
   local workflow_content
   workflow_content="$(cat <<'EOF'
-name: actions-example
+name: example-pipeline
 
 on:
   push:
@@ -398,57 +578,30 @@ jobs:
     runs-on: linux-amd64
     steps:
       - name: Print hello world
-        run: echo "hello world"
+        run: echo "Hello World"
 EOF
 )"
-  local workflow_b64
-  workflow_b64="$(printf '%s' "$workflow_content" | base64 | tr -d '\n')"
 
-  local get_body
-  get_body="$(mktemp)"
-  local get_status
-  get_status="$(curl -sS -o "$get_body" -w '%{http_code}' \
-    --user "${owner}:${password}" \
-    "$file_url" || true)"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "$default_branch" \
+    "chore: sync example-pipeline gitea workflow" \
+    "$workflow_content"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "dev" \
+    "chore: sync example-pipeline gitea workflow" \
+    "$workflow_content"
 
-  local existing_sha=""
-  if [[ "$get_status" == "200" ]]; then
-    existing_sha="$(tr -d '\n' <"$get_body" | sed -n 's/.*"sha":"\([^"]*\)".*/\1/p' | head -n1)"
-  elif [[ "$get_status" != "404" ]]; then
-    cat "$get_body" >&2 || true
-    rm -f "$get_body"
-    die "Failed to query example workflow file in '${owner}/${repo_name}' (HTTP ${get_status})"
-  fi
-  rm -f "$get_body"
-
-  local update_payload
-  local update_method
-  if [[ -n "$existing_sha" ]]; then
-    update_payload="$(printf '{"content":"%s","message":"chore: add hello world gitea action","sha":"%s"}' "$workflow_b64" "$existing_sha")"
-    update_method="PUT"
-  else
-    update_payload="$(printf '{"content":"%s","message":"chore: add hello world gitea action"}' "$workflow_b64")"
-    update_method="POST"
-  fi
-
-  local update_body
-  update_body="$(mktemp)"
-  local update_status
-  update_status="$(curl -sS -o "$update_body" -w '%{http_code}' \
-    --user "${owner}:${password}" \
-    -H 'Content-Type: application/json' \
-    -X "$update_method" \
-    --data "$update_payload" \
-    "$file_url" || true)"
-
-  if [[ "$update_status" != "200" && "$update_status" != "201" ]]; then
-    cat "$update_body" >&2 || true
-    rm -f "$update_body"
-    die "Failed to ensure example workflow in '${owner}/${repo_name}' (HTTP ${update_status})"
-  fi
-  rm -f "$update_body"
-
-  log "Ensured example workflow in '${owner}/${repo_name}:${file_path}'"
+  log "Ensured example-pipeline Gitea workflow in '${owner}/${repo_name}:${file_path}'"
 }
 
 remove_example_workflow_repo() {
@@ -468,7 +621,7 @@ remove_example_workflow_repo() {
 
   local owner="${GITEA_USER:-myuser}"
   local password="${GITEA_USER_PASSWORD:-password}"
-  local repo_name="${GITEA_EXAMPLE_REPO:-actions-example}"
+  local repo_name="actions-example"
 
   local delete_body
   delete_body="$(mktemp)"
@@ -708,27 +861,27 @@ ensure_repo_with_branch_jenkinsfiles() {
   log "Ensured ${repo_label} repo '${owner}/${repo_name}' with branches '${default_branch}' and 'dev'"
 }
 
-ensure_jenkins_example_repo() {
-  local auto_add="${GITEA_AUTO_ADD_JENKINS_EXAMPLE:-true}"
+ensure_example_pipeline_repo() {
+  local auto_add="${GITEA_AUTO_ADD_EXAMPLE_PIPELINE:-true}"
   auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
   case "$auto_add" in
     1|true|yes|on) ;;
     *)
-      log "Skipping jenkins example setup (GITEA_AUTO_ADD_JENKINS_EXAMPLE=${GITEA_AUTO_ADD_JENKINS_EXAMPLE:-false})"
+      log "Skipping example pipeline setup (GITEA_AUTO_ADD_EXAMPLE_PIPELINE=${GITEA_AUTO_ADD_EXAMPLE_PIPELINE:-false})"
       return 0
       ;;
   esac
 
   local template
-  template="$(cat "${ROOT_DIR}/templates/jenkins-example.Jenkinsfile")"
+  template="$(cat "${ROOT_DIR}/templates/example-pipeline.Jenkinsfile")"
   local prod_jenkinsfile="${template//__HELLO_MESSAGE__/hello prod world}"
   local dev_jenkinsfile="${template//__HELLO_MESSAGE__/hello dev world}"
 
   ensure_repo_with_branch_jenkinsfiles \
-    "${GITEA_JENKINS_EXAMPLE_REPO:-jenkins-example}" \
+    "${GITEA_EXAMPLE_PIPELINE_REPO:-example-pipeline}" \
     "$prod_jenkinsfile" \
     "$dev_jenkinsfile" \
-    "Jenkins example"
+    "example-pipeline"
 }
 
 ensure_generate_library_repo() {
@@ -752,6 +905,287 @@ ensure_generate_library_repo() {
     "$jenkinsfile" \
     "$jenkinsfile" \
     "generate-library"
+
+  ensure_generate_library_workflow
+}
+
+ensure_generate_library_workflow() {
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_GENERATE_LIBRARY_REPO:-generate-library}"
+  local file_path=".gitea/workflows/generate-library.yml"
+  local source_repo_url="${GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_branch="${GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_BRANCH:-main}"
+  local service_host
+  service_host="$(resolve_example_workflow_service_host)"
+  local vault_addr
+  vault_addr="$(resolve_example_workflow_vault_addr)"
+  local vault_token
+  vault_token="$(resolve_example_workflow_vault_token)"
+  local default_pypi_repo="${NEXUS_PYPI_REPO:-pypi-public}"
+
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
+  fi
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
+
+  local workflow_content
+  workflow_content="$(cat <<'EOF'
+name: generate-library
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  PLAYGROUND_SOURCE_REPO_URL: "__SOURCE_REPO_URL__"
+  PLAYGROUND_SOURCE_BRANCH: "__SOURCE_REPO_BRANCH__"
+  LOCAL_SERVICE_HOST: "__LOCAL_SERVICE_HOST__"
+  DEFAULT_NEXUS_PYPI_REPO: "__DEFAULT_NEXUS_PYPI_REPO__"
+
+jobs:
+  generate-library:
+    runs-on: linux-amd64
+    steps:
+      - name: Prepare workspace
+        run: |
+          rm -rf playground .nexus.env
+
+      - name: Install required system packages
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y git make python3 python3-pip python3-venv
+
+      - name: Resolve Nexus credentials from Vault
+        env:
+          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VAULT_ADDR:-}" ] || [ -z "${VAULT_TOKEN:-}" ]; then
+            echo "VAULT_ADDR and VAULT_TOKEN secrets are required."
+            exit 1
+          fi
+
+          vault_response="$(curl -fsS -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR%/}/v1/secret/data/services/nexus")"
+          export VAULT_RESPONSE="${vault_response}"
+
+          python3 - <<'PY' > .nexus.env
+          import json
+          import os
+          
+          data = json.loads(os.environ["VAULT_RESPONSE"]).get("data", {}).get("data", {})
+          required = ("url", "admin_user", "admin_password")
+          missing = [key for key in required if not data.get(key)]
+          if missing:
+              raise SystemExit(
+                  "Vault secret secret/data/services/nexus is missing: " + ", ".join(missing)
+              )
+          
+          nexus_url = data["url"].rstrip("/")
+          local_service_host = os.environ["LOCAL_SERVICE_HOST"]
+          nexus_url = (
+              nexus_url.replace("http://127.0.0.1", "http://" + local_service_host)
+              .replace("http://localhost", "http://" + local_service_host)
+              .replace("https://127.0.0.1", "https://" + local_service_host)
+              .replace("https://localhost", "https://" + local_service_host)
+          )
+          pypi_repo = data.get("pypi_repo") or os.environ["DEFAULT_NEXUS_PYPI_REPO"]
+          
+          print(f"NEXUS_URL={nexus_url}")
+          print(f"NEXUS_USER={data['admin_user']}")
+          print(f"NEXUS_PASSWORD={data['admin_password']}")
+          print(f"NEXUS_PYPI_REPO={pypi_repo}")
+          PY
+
+      - name: Ensure Nexus PyPI repository
+        run: |
+          set -euo pipefail
+          set -a
+          . ./.nexus.env
+          set +a
+          python3 - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from base64 import b64encode
+          
+          nexus_url = os.environ["NEXUS_URL"].rstrip("/")
+          repo = os.environ["NEXUS_PYPI_REPO"]
+          auth = b64encode(
+              f"{os.environ['NEXUS_USER']}:{os.environ['NEXUS_PASSWORD']}".encode()
+          ).decode()
+          headers = {"Authorization": f"Basic {auth}"}
+          
+          req = urllib.request.Request(f"{nexus_url}/service/rest/v1/repositories", headers=headers)
+          repos = json.load(urllib.request.urlopen(req))
+          if any(item.get("name") == repo for item in repos):
+              raise SystemExit(0)
+          
+          payload = json.dumps(
+              {
+                  "name": repo,
+                  "online": True,
+                  "storage": {
+                      "blobStoreName": "default",
+                      "strictContentTypeValidation": True,
+                      "writePolicy": "ALLOW",
+                  },
+              }
+          ).encode()
+          req = urllib.request.Request(
+              f"{nexus_url}/service/rest/v1/repositories/pypi/hosted",
+              data=payload,
+              headers={
+                  "Authorization": f"Basic {auth}",
+                  "Content-Type": "application/json",
+              },
+              method="POST",
+          )
+          urllib.request.urlopen(req)
+          PY
+
+      - name: Clone source repository
+        run: |
+          set -euo pipefail
+          echo "Cloning ${PLAYGROUND_SOURCE_REPO_URL} (branch ${PLAYGROUND_SOURCE_BRANCH})"
+          git clone --depth 1 --branch "${PLAYGROUND_SOURCE_BRANCH}" "${PLAYGROUND_SOURCE_REPO_URL}" playground
+
+      - name: Validate API Makefile
+        run: |
+          set -euo pipefail
+          cd playground/api
+          if ! grep -Eq '(^|[[:space:]])library-generate([[:space:]:]|$)' Makefile; then
+            echo "The checked-out source at ${PLAYGROUND_SOURCE_REPO_URL} branch ${PLAYGROUND_SOURCE_BRANCH} does not provide 'make library-generate'."
+            exit 1
+          fi
+
+      - name: Generate GraphQL client library
+        run: |
+          set -euo pipefail
+          cd playground/api
+          make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local
+          test -d graphql-library/generated/fastapi_graphql_client
+
+      - name: Build and upload package to Nexus
+        run: |
+          set -euo pipefail
+          set -a
+          . ./.nexus.env
+          set +a
+          cd playground/api/graphql-library
+          rm -rf .venv-gitea-generate
+          python3 -m venv .venv-gitea-generate
+          . .venv-gitea-generate/bin/activate
+          python -m pip install --upgrade pip build twine
+          python3 - <<'PY'
+          import datetime
+          import os
+          import pathlib
+          import re
+          
+          pyproject = pathlib.Path("pyproject.toml")
+          content = pyproject.read_text()
+          match = re.search(r'^version = "([^"]+)"', content, re.MULTILINE)
+          if not match:
+              raise SystemExit("Could not determine package version from pyproject.toml")
+          
+          build_number = os.environ.get("GITHUB_RUN_NUMBER") or datetime.datetime.utcnow().strftime("%Y%m%d%H%M%S")
+          new_version = f"{match.group(1)}.post{build_number}"
+          updated = re.sub(
+              r'^version = "[^"]+"',
+              f'version = "{new_version}"',
+              content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+          pyproject.write_text(updated)
+          pathlib.Path(".package-version").write_text(new_version + "\n")
+          print(f"Using package version {new_version}")
+          PY
+          python3 -m build
+          upload_url="${NEXUS_URL%/}/repository/${NEXUS_PYPI_REPO}/"
+          attempts=6
+          for attempt in $(seq 1 "$attempts"); do
+            if twine upload --non-interactive --verbose --repository-url "$upload_url" -u "${NEXUS_USER}" -p "${NEXUS_PASSWORD}" dist/*; then
+              exit 0
+            fi
+            if [ "$attempt" -eq "$attempts" ]; then
+              echo "Twine upload failed after ${attempts} attempts."
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf playground .nexus.env
+EOF
+)"
+  workflow_content="${workflow_content//__SOURCE_REPO_URL__/$source_repo_url}"
+  workflow_content="${workflow_content//__SOURCE_REPO_BRANCH__/$source_branch}"
+  workflow_content="${workflow_content//__LOCAL_SERVICE_HOST__/$service_host}"
+  workflow_content="${workflow_content//__DEFAULT_NEXUS_PYPI_REPO__/$default_pypi_repo}"
+
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "$default_branch" \
+    "chore: sync generate-library gitea workflow" \
+    "$workflow_content"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "dev" \
+    "chore: sync generate-library gitea workflow" \
+    "$workflow_content"
+
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_ADDR" \
+    "$vault_addr" \
+    "Vault API URL for managed generate-library workflows"
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_TOKEN" \
+    "$vault_token" \
+    "Vault token for managed generate-library workflows"
+
+  log "Ensured generate-library workflow in '${owner}/${repo_name}:${file_path}'"
 }
 
 ensure_library_example_client_repo() {
@@ -773,6 +1207,181 @@ ensure_library_example_client_repo() {
     "$jenkinsfile" \
     "$jenkinsfile" \
     "library-example-client"
+
+  ensure_library_example_client_workflow
+}
+
+ensure_library_example_client_workflow() {
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_LIBRARY_EXAMPLE_CLIENT_REPO:-library-example-client}"
+  local file_path=".gitea/workflows/library-example-client.yml"
+  local source_repo_url="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_branch="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_BRANCH:-main}"
+  local graphql_url
+  graphql_url="$(resolve_example_workflow_graphql_url)"
+  local service_host
+  service_host="$(resolve_example_workflow_service_host)"
+  local vault_addr
+  vault_addr="$(resolve_example_workflow_vault_addr)"
+  local vault_token
+  vault_token="$(resolve_example_workflow_vault_token)"
+  local default_pypi_repo="${NEXUS_PYPI_REPO:-pypi-public}"
+
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
+  fi
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
+
+  local workflow_content
+  workflow_content="$(cat <<'EOF'
+name: library-example-client
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  PLAYGROUND_SOURCE_REPO_URL: "__SOURCE_REPO_URL__"
+  PLAYGROUND_SOURCE_BRANCH: "__SOURCE_REPO_BRANCH__"
+  GRAPHQL_URL: "__GRAPHQL_URL__"
+  LOCAL_SERVICE_HOST: "__LOCAL_SERVICE_HOST__"
+  DEFAULT_NEXUS_PYPI_REPO: "__DEFAULT_NEXUS_PYPI_REPO__"
+
+jobs:
+  company-client:
+    runs-on: linux-amd64
+    steps:
+      - name: Prepare workspace
+        run: |
+          rm -rf playground .nexus.env
+
+      - name: Clone source repository
+        run: |
+          set -euo pipefail
+          echo "Cloning ${PLAYGROUND_SOURCE_REPO_URL} (branch ${PLAYGROUND_SOURCE_BRANCH})"
+          git clone --depth 1 --branch "${PLAYGROUND_SOURCE_BRANCH}" "${PLAYGROUND_SOURCE_REPO_URL}" playground
+          test -f playground/api/example-client/company.py
+
+      - name: Resolve Nexus credentials from Vault
+        env:
+          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VAULT_ADDR:-}" ] || [ -z "${VAULT_TOKEN:-}" ]; then
+            echo "VAULT_ADDR and VAULT_TOKEN secrets are required."
+            exit 1
+          fi
+
+          vault_response="$(curl -fsS -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR%/}/v1/secret/data/services/nexus")"
+          export VAULT_RESPONSE="${vault_response}"
+
+          python3 -c 'import json, os, sys; from urllib.parse import quote, urlsplit, urlunsplit; data = json.loads(os.environ["VAULT_RESPONSE"]).get("data", {}).get("data", {}); missing = [key for key in ("url", "regular_user", "regular_password") if not data.get(key)]; assert not missing, "Vault secret secret/data/services/nexus is missing: " + ", ".join(missing); base_url = data["url"].rstrip("/"); local_service_host = os.environ["LOCAL_SERVICE_HOST"]; parts = urlsplit(base_url); host_name = parts.hostname or ""; port = f":{parts.port}" if parts.port else ""; base_url = urlunsplit((parts.scheme, f"{local_service_host}{port}", parts.path, parts.query, parts.fragment)) if host_name in {"127.0.0.1", "localhost"} else base_url; pypi_repo = data.get("pypi_repo") or os.environ["DEFAULT_NEXUS_PYPI_REPO"]; simple_url = base_url.rstrip("/") + "/repository/" + pypi_repo + "/simple"; simple_parts = urlsplit(simple_url); host = simple_parts.hostname or ""; port = f":{simple_parts.port}" if simple_parts.port else ""; userinfo = "{}:{}".format(quote(data["regular_user"], safe=""), quote(data["regular_password"], safe="")); auth_url = urlunsplit((simple_parts.scheme, f"{userinfo}@{host}{port}", simple_parts.path, simple_parts.query, simple_parts.fragment)); print(f"NEXUS_SIMPLE_URL={auth_url}"); print(f"NEXUS_HOST={host}"); print(f"NEXUS_PYPI_REPO={pypi_repo}")' > .nexus.env
+
+      - name: Install generated GraphQL client from Nexus
+        run: |
+          set -euo pipefail
+          unset SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y python3-pip python3-venv
+          . ./.nexus.env
+          rm -rf .venv-library-example-client
+          python3 -m venv .venv-library-example-client
+          . .venv-library-example-client/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install \
+            --index-url https://pypi.org/simple \
+            --extra-index-url "${NEXUS_SIMPLE_URL}" \
+            --trusted-host "${NEXUS_HOST}" \
+            fastapi-graphql-client
+
+      - name: Run company.py workflow with valid data
+        env:
+          COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP: "1"
+          FORCE_COLOR: "1"
+        run: |
+          set -euo pipefail
+          . .venv-library-example-client/bin/activate
+          python playground/api/example-client/company.py \
+            --graphql-url "${GRAPHQL_URL}" \
+            workflow \
+            --employee-name Erika \
+            --employee-surname Mustermann \
+            --employee-role Developer \
+            --updated-employee-name Erika \
+            --updated-employee-surname Mustermann \
+            --updated-employee-role "Senior Developer"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf playground .nexus.env .venv-library-example-client
+EOF
+)"
+  workflow_content="${workflow_content//__SOURCE_REPO_URL__/$source_repo_url}"
+  workflow_content="${workflow_content//__SOURCE_REPO_BRANCH__/$source_branch}"
+  workflow_content="${workflow_content//__GRAPHQL_URL__/$graphql_url}"
+  workflow_content="${workflow_content//__LOCAL_SERVICE_HOST__/$service_host}"
+  workflow_content="${workflow_content//__DEFAULT_NEXUS_PYPI_REPO__/$default_pypi_repo}"
+
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "$default_branch" \
+    "chore: sync library-example-client gitea workflow" \
+    "$workflow_content"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "dev" \
+    "chore: sync library-example-client gitea workflow" \
+    "$workflow_content"
+
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_ADDR" \
+    "$vault_addr" \
+    "Vault API URL for managed library-example-client workflows"
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_TOKEN" \
+    "$vault_token" \
+    "Vault token for managed library-example-client workflows"
+
+  log "Ensured library-example-client workflow in '${owner}/${repo_name}:${file_path}'"
 }
 
 ensure_add_employee_repo() {
@@ -794,4 +1403,205 @@ ensure_add_employee_repo() {
     "$jenkinsfile" \
     "$jenkinsfile" \
     "add-employee"
+
+  ensure_add_employee_workflow
+}
+
+ensure_add_employee_workflow() {
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_ADD_EMPLOYEE_REPO:-add-employee}"
+  local file_path=".gitea/workflows/add-employee.yml"
+  local source_repo_url="${GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_branch="${GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_BRANCH:-main}"
+  local graphql_url
+  graphql_url="$(resolve_add_employee_workflow_graphql_url)"
+  local vault_addr
+  vault_addr="$(resolve_example_workflow_vault_addr)"
+  local vault_token
+  vault_token="$(resolve_example_workflow_vault_token)"
+  local default_pypi_repo="${NEXUS_PYPI_REPO:-pypi-public}"
+
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
+  fi
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
+
+  local workflow_content
+  workflow_content="$(cat <<'EOF'
+name: add-employee
+
+on:
+  push:
+  workflow_dispatch:
+    inputs:
+      employee_name:
+        description: Employee first name
+        required: false
+        default: Hans
+      employee_surname:
+        description: Employee surname
+        required: false
+        default: Wurst
+      employee_role:
+        description: Employee role
+        required: false
+        default: Developer
+
+env:
+  PLAYGROUND_SOURCE_REPO_URL: "__SOURCE_REPO_URL__"
+  PLAYGROUND_SOURCE_BRANCH: "__SOURCE_REPO_BRANCH__"
+  GRAPHQL_URL: "__GRAPHQL_URL__"
+  DEFAULT_NEXUS_PYPI_REPO: "__DEFAULT_NEXUS_PYPI_REPO__"
+
+jobs:
+  add-employee:
+    runs-on: linux-amd64
+    steps:
+      - name: Prepare workspace
+        run: |
+          rm -rf playground .nexus.env
+
+      - name: Install required system packages
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y git python3-pip python3-venv
+
+      - name: Resolve Nexus credentials from Vault
+        env:
+          VAULT_ADDR: ${{ secrets.VAULT_ADDR }}
+          VAULT_TOKEN: ${{ secrets.VAULT_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${VAULT_ADDR:-}" ] || [ -z "${VAULT_TOKEN:-}" ]; then
+            echo "VAULT_ADDR and VAULT_TOKEN secrets are required."
+            exit 1
+          fi
+
+          vault_response="$(curl -fsS -H "X-Vault-Token: ${VAULT_TOKEN}" "${VAULT_ADDR%/}/v1/secret/data/services/nexus")"
+          export VAULT_RESPONSE="${vault_response}"
+
+          python3 -c 'import json, os; data = json.loads(os.environ["VAULT_RESPONSE"]).get("data", {}).get("data", {}); missing = [key for key in ("url", "admin_user", "admin_password") if not data.get(key)]; assert not missing, "Vault secret secret/data/services/nexus is missing: " + ", ".join(missing); nexus_url = data["url"].rstrip("/"); nexus_url = nexus_url.replace("http://127.0.0.1", "http://host.docker.internal").replace("http://localhost", "http://host.docker.internal").replace("https://127.0.0.1", "https://host.docker.internal").replace("https://localhost", "https://host.docker.internal"); pypi_repo = data.get("pypi_repo") or os.environ["DEFAULT_NEXUS_PYPI_REPO"]; print("NEXUS_URL=" + nexus_url); print("NEXUS_USER=" + data["admin_user"]); print("NEXUS_PASSWORD=" + data["admin_password"]); print("NEXUS_PYPI_REPO=" + pypi_repo)' > .nexus.env
+
+      - name: Clone source repository
+        run: |
+          set -euo pipefail
+          echo "Cloning ${PLAYGROUND_SOURCE_REPO_URL} (branch ${PLAYGROUND_SOURCE_BRANCH})"
+          git clone --depth 1 --branch "${PLAYGROUND_SOURCE_BRANCH}" "${PLAYGROUND_SOURCE_REPO_URL}" playground
+          test -f playground/api/example-client/company.py
+
+      - name: Validate Example Client CLI
+        run: |
+          set -euo pipefail
+          if ! (cd playground/api && example-client/company.py add-employee --help 2>&1 | grep -q -- '--employee-role'); then
+            echo "The checked-out source at ${PLAYGROUND_SOURCE_REPO_URL} branch ${PLAYGROUND_SOURCE_BRANCH} does not provide role-based add-employee support in api/example-client/company.py."
+            exit 1
+          fi
+
+      - name: Install generated GraphQL client from Nexus
+        run: |
+          set -euo pipefail
+          unset SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE
+          . ./.nexus.env
+          rm -rf .venv-add-employee
+          python3 -m venv .venv-add-employee
+          . .venv-add-employee/bin/activate
+          python -m pip install --upgrade pip
+          nexus_simple_url="${NEXUS_URL%/}/repository/${NEXUS_PYPI_REPO}/simple"
+          nexus_host="$(printf '%s' "${NEXUS_URL}" | sed -E 's#^[a-zA-Z]+://([^/:]+).*#\1#')"
+          python -m pip install \
+            --index-url https://pypi.org/simple \
+            --extra-index-url "${nexus_simple_url}" \
+            --trusted-host "${nexus_host}" \
+            "fastapi-graphql-client${FASTAPI_GRAPHQL_CLIENT_VERSION:+==${FASTAPI_GRAPHQL_CLIENT_VERSION}}"
+
+      - name: Run Example Client
+        env:
+          COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP: "1"
+          FORCE_COLOR: "1"
+        run: |
+          set -euo pipefail
+          employee_name="${{ github.event.inputs.employee_name }}"
+          employee_surname="${{ github.event.inputs.employee_surname }}"
+          employee_role="${{ github.event.inputs.employee_role }}"
+          if [ -z "${employee_name}" ]; then employee_name="Hans"; fi
+          if [ -z "${employee_surname}" ]; then employee_surname="Wurst"; fi
+          if [ -z "${employee_role}" ]; then employee_role="Developer"; fi
+          . .venv-add-employee/bin/activate
+          python playground/api/example-client/company.py \
+            --graphql-url "${GRAPHQL_URL}" \
+            add-employee \
+            --employee-name "${employee_name}" \
+            --employee-surname "${employee_surname}" \
+            --employee-role "${employee_role}"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf playground .nexus.env .venv-add-employee
+EOF
+)"
+  workflow_content="${workflow_content//__SOURCE_REPO_URL__/$source_repo_url}"
+  workflow_content="${workflow_content//__SOURCE_REPO_BRANCH__/$source_branch}"
+  workflow_content="${workflow_content//__GRAPHQL_URL__/$graphql_url}"
+  workflow_content="${workflow_content//__DEFAULT_NEXUS_PYPI_REPO__/$default_pypi_repo}"
+
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "$default_branch" \
+    "chore: sync add-employee gitea workflow" \
+    "$workflow_content"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "dev" \
+    "chore: sync add-employee gitea workflow" \
+    "$workflow_content"
+
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_ADDR" \
+    "$vault_addr" \
+    "Vault API URL for managed add-employee workflows"
+  ensure_repo_actions_secret \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "VAULT_TOKEN" \
+    "$vault_token" \
+    "Vault token for managed add-employee workflows"
+
+  log "Ensured add-employee workflow in '${owner}/${repo_name}:${file_path}'"
 }

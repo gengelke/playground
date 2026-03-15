@@ -35,10 +35,10 @@ Both instances are configured from the same as-code bootstrap script and differ 
 
 Both Jenkins instances automatically create and run a pipeline job from git:
 
-- `jenkins-prod` uses `http://host.docker.internal:3000/myuser/jenkins-example` branch `main` by default
-- `jenkins-dev` uses `http://host.docker.internal:3000/myuser/jenkins-example` branch `dev` by default
+- `jenkins-prod` uses `http://host.docker.internal:3000/myuser/example-pipeline` branch `main` by default
+- `jenkins-dev` uses `http://host.docker.internal:3000/myuser/example-pipeline` branch `dev` by default
 - Both instances check out with Jenkins-managed credentials (`pipeline-git-prod` / `pipeline-git-dev`) when available
-- The default `jenkins-example` pipeline Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
+- The default `example-pipeline` Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
 - Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), run `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, and upload it to the Nexus PyPI repo `pypi-public`
 - Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py workflow` using that installed package
 - Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), install `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py add-employee` against the configured shared FastAPI instance
@@ -56,7 +56,7 @@ export DEV_BRANCH=dev
 To set a different repo just for `jenkins-dev`:
 
 ```bash
-export DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/jenkins-example
+export DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/example-pipeline
 export DEV_PIPELINE_GIT_USERNAME=myuser
 export DEV_PIPELINE_GIT_PASSWORD='<gitea-password>'
 export DEV_BRANCH=dev
@@ -198,7 +198,7 @@ Per-instance repo override example:
 ```bash
 make up MODE=docker \
   PROD_PIPELINE_REPO_URL=https://github.com/acme/ci.git \
-  DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/jenkins-example \
+  DEV_PIPELINE_REPO_URL=http://host.docker.internal:3000/myuser/example-pipeline \
   DEV_PIPELINE_GIT_USERNAME=myuser \
   DEV_PIPELINE_GIT_PASSWORD='<gitea-password>' \
   DEV_GENERATE_LIBRARY_SOURCE_REPO_URL=https://github.com/acme/playground.git \

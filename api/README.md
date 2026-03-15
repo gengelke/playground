@@ -48,8 +48,9 @@ Useful FastAPI endpoints:
 - `GET /employees/{employee_id}`: fetch one employee
 - `GET /roles`: list all allowed roles
 - `POST /employees`, `PUT /employees/{employee_id}`, `DELETE /employees/{employee_id}`: mutate employee data
+- GraphQL exposes the same employee operations plus `roles`, `addRole`, and `deleteRole`
 
-Run the generated-library CLI directly from `api/`:
+Run the example client CLI directly from `api/`:
 
 ```bash
 ./example-client/company.py add-employee --employee-name Erika --employee-surname Mustermann --employee-role Developer

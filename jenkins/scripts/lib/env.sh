@@ -182,8 +182,8 @@ resolve_instance_pipeline_repo_url() {
         return
       fi
       case "$mode" in
-        docker) printf 'http://host.docker.internal:3000/myuser/jenkins-example' ;;
-        bare) printf 'http://127.0.0.1:3000/myuser/jenkins-example' ;;
+        docker) printf 'http://host.docker.internal:3000/myuser/example-pipeline' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/example-pipeline' ;;
         *)
           echo "unknown mode: ${mode}" >&2
           return 1
@@ -197,8 +197,8 @@ resolve_instance_pipeline_repo_url() {
         return
       fi
       case "$mode" in
-        docker) printf 'http://host.docker.internal:3000/myuser/jenkins-example' ;;
-        bare) printf 'http://127.0.0.1:3000/myuser/jenkins-example' ;;
+        docker) printf 'http://host.docker.internal:3000/myuser/example-pipeline' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/example-pipeline' ;;
         *)
           echo "unknown mode: ${mode}" >&2
           return 1

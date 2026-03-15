@@ -9,8 +9,8 @@ MODE ?= docker
 SERVICES := vault gitea gitlab nexus api jenkins
 START_ORDER := $(SERVICES)
 STOP_ORDER := jenkins api nexus gitlab gitea vault
-DEVOPS_ORDER := vault nexus gitea jenkins
-DEVOPS_STOP_ORDER := jenkins gitea nexus vault
+DEVOPS_ORDER := vault nexus api gitea jenkins
+DEVOPS_STOP_ORDER := jenkins gitea api nexus vault
 DISTCLEAN_ORDER := jenkins api nexus gitlab gitea vault
 
 .PHONY: help all up down start stop restart status \
