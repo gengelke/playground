@@ -20,7 +20,6 @@
 - `nexus`: Local Sonatype Nexus OSS repository manager with automated first-run initialization. See [nexus/README.md](nexus/README.md).
 - `api`: FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. See [api/README.md](api/README.md).
 - `jenkins`: Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. See [jenkins/README.md](jenkins/README.md).
-- `nginx`: Local reverse proxy for friendly service hostnames like `http://jenkins-dev`. See [nginx/README.md](nginx/README.md).
 
 ## Top-level orchestration
 
@@ -40,7 +39,7 @@ make down MODE=docker
 
 Dependency order:
 
-`vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx`
+`vault -> gitea -> gitlab -> nexus -> api -> jenkins`
 
 Vault-dependent services (`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and will reuse the current `MODE`.
 
@@ -54,7 +53,7 @@ make distclean
 make distclan
 ```
 
-That cleanup currently runs `distclean` for `nginx`, `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`. `nginx` participates for consistency, but does not keep local generated state, so its cleanup is effectively a no-op.
+That cleanup currently runs `distclean` for `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`.
 
 ## Central Port Configuration
 
@@ -63,27 +62,3 @@ Host-facing ports are managed centrally in:
 `ports.env`
 
 Update that file to change ports for all services in one place.
-
-## Friendly service URLs (Docker mode)
-
-Start everything:
-
-```bash
-make up MODE=docker
-```
-
-Add this to `/etc/hosts`:
-
-```txt
-127.0.0.1 jenkins-dev jenkins-prod api-dev gitea-dev gitlab-dev nexus-dev vault-dev
-```
-
-Then open:
-
-- `http://jenkins-dev`
-- `http://jenkins-prod`
-- `http://api-dev`
-- `http://gitea-dev`
-- `http://gitlab-dev`
-- `http://nexus-dev`
-- `http://vault-dev`

@@ -6,12 +6,12 @@ MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 MODE ?= docker
 
-SERVICES := vault gitea gitlab nexus api jenkins nginx
+SERVICES := vault gitea gitlab nexus api jenkins
 START_ORDER := $(SERVICES)
-STOP_ORDER := nginx jenkins api nexus gitlab gitea vault
+STOP_ORDER := jenkins api nexus gitlab gitea vault
 DEVOPS_ORDER := vault nexus gitea jenkins
 DEVOPS_STOP_ORDER := jenkins gitea nexus vault
-DISTCLEAN_ORDER := nginx jenkins api nexus gitlab gitea vault
+DISTCLEAN_ORDER := jenkins api nexus gitlab gitea vault
 
 .PHONY: help all up down start stop restart status \
 	devops devops-up devops-down devops-stop \
@@ -41,7 +41,7 @@ help:
 	@echo "  make down-vault MODE=docker|bare"
 	@echo "  make status-vault MODE=docker|bare"
 	@echo "  make logs-vault MODE=docker|bare"
-	@echo "  # Same pattern for: gitea, gitlab, nexus, api, jenkins, nginx"
+	@echo "  # Same pattern for: gitea, gitlab, nexus, api, jenkins"
 	@echo ""
 	@echo "Service start order: $(START_ORDER)"
 	@echo "Service stop order:  $(STOP_ORDER)"
