@@ -121,14 +121,14 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - checks out the configured add-employee source repo (default `https://github.com/gengelke/playground.git`)
   - installs `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`
   - uses the configured shared FastAPI instance for both the Jenkins role dropdown and the GraphQL mutation call
-  - calls `api/example-client/company.py add-employee --employee-name ... --employee-surname ... --employee-role ...`
+  - calls `api/example-client/company.py employee add --employee-name ... --employee-surname ... --employee-role ...`
   - is meant to be used from Jenkins with build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and a role dropdown backed by the FastAPI `GET /roles` API
 - The same `add-employee` repo also gets a managed Gitea Actions workflow at `.gitea/workflows/add-employee.yml` on its default and `dev` branches:
   - clones the configured add-employee workflow source repo/branch
   - uses managed Gitea Actions secrets `VAULT_ADDR` and `VAULT_TOKEN`
   - fetches Nexus credentials from Vault path `secret/data/services/nexus`
   - installs `fastapi-graphql-client` from the Nexus PyPI repo
-  - runs `api/example-client/company.py add-employee` with workflow-dispatch inputs `employee_name`, `employee_surname`, and `employee_role`
+  - runs `api/example-client/company.py employee add` with workflow-dispatch inputs `employee_name`, `employee_surname`, and `employee_role`
 - `GITEA_ADD_EMPLOYEE_WORKFLOW_GRAPHQL_URL` defaults by mode:
   - `MODE=docker`: `http://host.docker.internal:8000/graphql`
   - `MODE=bare`: `http://127.0.0.1:8000/graphql`

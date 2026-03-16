@@ -295,49 +295,66 @@ def build_parser() -> argparse.ArgumentParser:
         help="GraphQL endpoint URL.",
     )
 
-    subparsers = parser.add_subparsers(
-        dest="command",
+    components = parser.add_subparsers(
+        dest="component",
         required=True,
         parser_class=ColorParser,
     )
 
-    add_parser = subparsers.add_parser("add-employee")
-    add_parser.add_argument("--employee-id", type=int, default=int(time.time()))
-    add_parser.add_argument("--employee-name", required=True)
-    add_parser.add_argument("--employee-surname", required=True)
-    add_parser.add_argument("--employee-role", default=DEFAULT_ROLES[0])
-    add_parser.set_defaults(handler=add_employee)
+    # --- employee ---
+    employee_parser = components.add_parser("employee", help="Manage employees.")
+    employee_actions = employee_parser.add_subparsers(
+        dest="action",
+        required=True,
+        parser_class=ColorParser,
+    )
 
-    update_parser = subparsers.add_parser("update-employee")
-    update_parser.add_argument("--employee-id", type=int, required=True)
-    update_parser.add_argument("--employee-name", required=False)
-    update_parser.add_argument("--employee-surname", required=False)
-    update_parser.add_argument("--employee-role", required=False)
-    update_parser.set_defaults(handler=update_employee)
+    emp_add = employee_actions.add_parser("add", help="Add a new employee.")
+    emp_add.add_argument("--employee-id", type=int, default=int(time.time()))
+    emp_add.add_argument("--employee-name", required=True)
+    emp_add.add_argument("--employee-surname", required=True)
+    emp_add.add_argument("--employee-role", default=DEFAULT_ROLES[0])
+    emp_add.set_defaults(handler=add_employee)
 
-    delete_parser = subparsers.add_parser("delete-employee")
-    delete_parser.add_argument("--employee-id", type=int, required=True)
-    delete_parser.set_defaults(handler=delete_employee)
+    emp_update = employee_actions.add_parser("update", help="Update an existing employee.")
+    emp_update.add_argument("--employee-id", type=int, required=True)
+    emp_update.add_argument("--employee-name", required=False)
+    emp_update.add_argument("--employee-surname", required=False)
+    emp_update.add_argument("--employee-role", required=False)
+    emp_update.set_defaults(handler=update_employee)
 
-    add_role_parser = subparsers.add_parser("add-role")
-    add_role_parser.add_argument("--role", required=True)
-    add_role_parser.set_defaults(handler=add_role)
+    emp_delete = employee_actions.add_parser("delete", help="Delete an employee.")
+    emp_delete.add_argument("--employee-id", type=int, required=True)
+    emp_delete.set_defaults(handler=delete_employee)
 
-    delete_role_parser = subparsers.add_parser("delete-role")
-    delete_role_parser.add_argument("--role", required=True)
-    delete_role_parser.set_defaults(handler=delete_role)
+    emp_get = employee_actions.add_parser("get", help="Get a single employee.")
+    emp_get.add_argument("--employee-id", type=int, required=True)
+    emp_get.set_defaults(handler=get_employee)
 
-    show_parser = subparsers.add_parser("get-employee")
-    show_parser.add_argument("--employee-id", type=int, required=True)
-    show_parser.set_defaults(handler=get_employee)
+    emp_list = employee_actions.add_parser("list", help="List all employees.")
+    emp_list.set_defaults(handler=get_all_employees)
 
-    show_all_parser = subparsers.add_parser("get-all-employees")
-    show_all_parser.set_defaults(handler=get_all_employees)
+    # --- role ---
+    role_parser = components.add_parser("role", help="Manage roles.")
+    role_actions = role_parser.add_subparsers(
+        dest="action",
+        required=True,
+        parser_class=ColorParser,
+    )
 
-    roles_parser = subparsers.add_parser("get-roles")
-    roles_parser.set_defaults(handler=get_roles)
+    role_add = role_actions.add_parser("add", help="Add a new role.")
+    role_add.add_argument("--role", required=True)
+    role_add.set_defaults(handler=add_role)
 
-    workflow_parser = subparsers.add_parser("workflow")
+    role_delete = role_actions.add_parser("delete", help="Delete a role.")
+    role_delete.add_argument("--role", required=True)
+    role_delete.set_defaults(handler=delete_role)
+
+    role_list = role_actions.add_parser("list", help="List all roles.")
+    role_list.set_defaults(handler=get_roles)
+
+    # --- workflow ---
+    workflow_parser = components.add_parser("workflow", help="Run the demo workflow.")
     workflow_parser.add_argument("--employee-id", type=int, default=int(time.time()))
     workflow_parser.add_argument("--employee-name", default="Max")
     workflow_parser.add_argument("--employee-surname", default="Mustermann")

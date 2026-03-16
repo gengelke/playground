@@ -76,7 +76,7 @@ if [[ ! -f playground/api/example-client/company.py ]]; then
 fi
 
 banner "Validate Example Client CLI"
-if ! (cd playground/api && example-client/company.py add-employee --help 2>&1 | grep -q -- '--employee-role'); then
+if ! (cd playground/api && example-client/company.py employee add --help 2>&1 | grep -q -- '--employee-role'); then
   echo "The checked-out source at ${source_repo_url} branch ${source_branch} does not provide role-based add-employee support in api/example-client/company.py."
   echo "Push the updated source to that branch or override ADD_EMPLOYEE_SOURCE_REPO_URL / ADD_EMPLOYEE_SOURCE_BRANCH."
   exit 1
@@ -173,7 +173,7 @@ banner "Run Example Client"
 
 FORCE_COLOR=1 COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP=1 python api/example-client/company.py \
   --graphql-url "$graphql_url" \
-  add-employee \
+  employee add \
   --employee-name "$employee_name" \
   --employee-surname "$employee_surname" \
   --employee-role "$employee_role"

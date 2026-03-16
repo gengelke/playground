@@ -1514,7 +1514,7 @@ jobs:
       - name: Validate Example Client CLI
         run: |
           set -euo pipefail
-          if ! (cd playground/api && example-client/company.py add-employee --help 2>&1 | grep -q -- '--employee-role'); then
+          if ! (cd playground/api && example-client/company.py employee add --help 2>&1 | grep -q -- '--employee-role'); then
             echo "The checked-out source at ${PLAYGROUND_SOURCE_REPO_URL} branch ${PLAYGROUND_SOURCE_BRANCH} does not provide role-based add-employee support in api/example-client/company.py."
             exit 1
           fi
@@ -1551,7 +1551,7 @@ jobs:
           . .venv-add-employee/bin/activate
           python playground/api/example-client/company.py \
             --graphql-url "${GRAPHQL_URL}" \
-            add-employee \
+            employee add \
             --employee-name "${employee_name}" \
             --employee-surname "${employee_surname}" \
             --employee-role "${employee_role}"

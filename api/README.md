@@ -53,14 +53,14 @@ Useful FastAPI endpoints:
 Run the example client CLI directly from `api/`:
 
 ```bash
-./example-client/company.py add-employee --employee-name Erika --employee-surname Mustermann --employee-role Developer
-./example-client/company.py update-employee --employee-id 4711 --employee-name Erika --employee-surname Mustermann --employee-role "Senior Developer"
-./example-client/company.py delete-employee --employee-id 4711
-./example-client/company.py add-role --role Architect
-./example-client/company.py delete-role --role Architect
-./example-client/company.py get-employee --employee-id 4711
-./example-client/company.py get-all-employees
-./example-client/company.py get-roles
+./example-client/company.py employee add --employee-name Erika --employee-surname Mustermann --employee-role Developer
+./example-client/company.py employee update --employee-id 4711 --employee-name Erika --employee-surname Mustermann --employee-role "Senior Developer"
+./example-client/company.py employee delete --employee-id 4711
+./example-client/company.py employee get --employee-id 4711
+./example-client/company.py employee list
+./example-client/company.py role add --role Architect
+./example-client/company.py role delete --role Architect
+./example-client/company.py role list
 ./example-client/company.py workflow --employee-name Erika --employee-surname Mustermann --employee-role Developer
 ```
 
