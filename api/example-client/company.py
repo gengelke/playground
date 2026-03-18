@@ -22,6 +22,12 @@ DEFAULT_ROLES        = ("Developer", "Senior Developer", "Superhero", "AvD")
 BOOTSTRAP_ENV_VAR    = "COMPANY_CLIENT_BOOTSTRAPPED"
 DISABLE_BOOTSTRAP_ENV_VAR = "COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP"
 
+EXIT_OK         = 0
+EXIT_ERROR      = 1   # generic / connection / argument error
+EXIT_CONFLICT   = 2   # already exists / still in use
+EXIT_NOT_FOUND  = 3   # resource not found
+EXIT_INVALID    = 4   # invalid input (e.g. unknown role)
+
 
 FORCE_COLOR = os.getenv("FORCE_COLOR", "").strip().lower()
 USE_COLOR = (
@@ -65,9 +71,20 @@ def colorize(text: str, color: str) -> str:
     return f"{color}{text}{RESET}"
 
 
-def fail(message: str, color: str = RED) -> None:
+def fail(message: str, color: str = RED, exit_code: int = EXIT_ERROR) -> None:
     print(colorize(message, color), file=sys.stderr)
-    raise SystemExit(1)
+    raise SystemExit(exit_code)
+
+
+def classify_graphql_error(exc: Exception) -> int:
+    msg = str(exc).lower()
+    if "already exists" in msg or "still assigned" in msg:
+        return EXIT_CONFLICT
+    if "not found" in msg:
+        return EXIT_NOT_FOUND
+    if "does not exist" in msg:
+        return EXIT_INVALID
+    return EXIT_ERROR
 
 
 def print_step(message: str) -> None:
@@ -549,7 +566,7 @@ def main() -> None:
     try:
         result = args.handler(args)
     except GraphQLClientGraphQLMultiError as exc:
-        fail(f"GraphQL error: {exc}")
+        fail(f"GraphQL error: {exc}", exit_code=classify_graphql_error(exc))
     except httpx.ConnectError as exc:
         fail(
             f"Connection error: could not connect to {args.graphql_url}. "
