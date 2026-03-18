@@ -46,9 +46,13 @@ Useful FastAPI endpoints:
 
 - `GET /employees`: list all employees
 - `GET /employees/{employee_id}`: fetch one employee
-- `GET /roles`: list all allowed roles
 - `POST /employees`, `PUT /employees/{employee_id}`, `DELETE /employees/{employee_id}`: mutate employee data
-- GraphQL exposes the same employee operations plus `roles`, `addRole`, and `deleteRole`
+- `GET /roles`: list all roles
+- `GET /roles/{role_id}`: fetch one role by numeric ID
+- `POST /roles`: add a new role
+- `DELETE /roles/{role}`: delete a role by name
+- `DELETE /roles/by-id/{role_id}`: delete a role by numeric ID
+- GraphQL exposes the same employee operations plus `roles`, `role(id)`, `addRole`, `deleteRole`, and `deleteRoleById`
 
 Run the example client CLI directly from `api/`:
 
@@ -59,7 +63,10 @@ Run the example client CLI directly from `api/`:
 ./example-client/company.py employee get --employee-id 4711
 ./example-client/company.py employee list
 ./example-client/company.py role add --role Architect
+./example-client/company.py role get --role Architect
+./example-client/company.py role get --id 5
 ./example-client/company.py role delete --role Architect
+./example-client/company.py role delete --id 5
 ./example-client/company.py role list
 ./example-client/company.py workflow --employee-name Erika --employee-surname Mustermann --employee-role Developer
 ```

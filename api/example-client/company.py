@@ -148,6 +148,8 @@ def client_source_is_current(client_source: str) -> bool:
     required_methods = (
         "def mutation_add_role(",
         "def mutation_delete_role(",
+        "def mutation_delete_role_by_id(",
+        "def query_role(",
         "def query_roles(",
     )
     return all(method in client_source for method in required_methods)
@@ -271,8 +273,8 @@ def render_roles_table(roles: list[dict[str, object]]) -> str:
     if not roles:
         return colorize("(no roles)", GREY)
 
-    rows = [[role.get("role", "")] for role in roles]
-    return table(["Role"], rows)
+    rows = [[role.get("id", ""), role.get("role", "")] for role in roles]
+    return table(["ID", "Role"], rows)
 
 
 def render_key_value_table(values: dict[str, object]) -> str:
@@ -363,8 +365,16 @@ def build_parser() -> argparse.ArgumentParser:
     role_add.add_argument("--role", required=True)
     role_add.set_defaults(handler=add_role)
 
+    role_get = role_actions.add_parser("get", help="Get a single role by id or name.")
+    role_get_group = role_get.add_mutually_exclusive_group(required=True)
+    role_get_group.add_argument("--id", type=int, help="Get by numeric role id.")
+    role_get_group.add_argument("--role", help="Get by role name.")
+    role_get.set_defaults(handler=get_role)
+
     role_delete = role_actions.add_parser("delete", help="Delete a role.")
-    role_delete.add_argument("--role", required=True)
+    role_delete_group = role_delete.add_mutually_exclusive_group(required=True)
+    role_delete_group.add_argument("--role", help="Delete by role name.")
+    role_delete_group.add_argument("--id", type=int, help="Delete by numeric role id.")
     role_delete.set_defaults(handler=delete_role)
 
     role_list = role_actions.add_parser("list", help="List all roles.")
@@ -422,10 +432,26 @@ def add_role(args: argparse.Namespace) -> object:
         return client.mutation_add_role(role=args.role)
 
 
+def get_role(args: argparse.Namespace) -> object:
+    from fastapi_graphql_client import FastAPIGraphQLClient
+
+    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+        if args.id is not None:
+            return client.query_role(id=args.id)
+        result = client.query_roles()
+        roles = normalize(result).get("roles", [])
+        match = next((r for r in roles if r.get("role") == args.role), None)
+        if match is None:
+            fail(f"Role '{args.role}' not found", exit_code=EXIT_NOT_FOUND)
+        return match
+
+
 def delete_role(args: argparse.Namespace) -> object:
     from fastapi_graphql_client import FastAPIGraphQLClient
 
     with FastAPIGraphQLClient(url=args.graphql_url) as client:
+        if args.id is not None:
+            return client.mutation_delete_role_by_id(id=args.id)
         return client.mutation_delete_role(role=args.role)
 
 
