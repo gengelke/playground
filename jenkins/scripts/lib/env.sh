@@ -69,6 +69,15 @@ DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL="${DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL:-}"
 ADD_EMPLOYEE_GRAPHQL_URL="${ADD_EMPLOYEE_GRAPHQL_URL:-}"
 PROD_ADD_EMPLOYEE_GRAPHQL_URL="${PROD_ADD_EMPLOYEE_GRAPHQL_URL:-}"
 DEV_ADD_EMPLOYEE_GRAPHQL_URL="${DEV_ADD_EMPLOYEE_GRAPHQL_URL:-}"
+PRINT_EMPLOYEE_PIPELINE_REPO_URL="${PRINT_EMPLOYEE_PIPELINE_REPO_URL:-}"
+PROD_PRINT_EMPLOYEE_PIPELINE_REPO_URL="${PROD_PRINT_EMPLOYEE_PIPELINE_REPO_URL:-}"
+DEV_PRINT_EMPLOYEE_PIPELINE_REPO_URL="${DEV_PRINT_EMPLOYEE_PIPELINE_REPO_URL:-}"
+PRINT_EMPLOYEE_PIPELINE_BRANCH="${PRINT_EMPLOYEE_PIPELINE_BRANCH:-}"
+PROD_PRINT_EMPLOYEE_PIPELINE_BRANCH="${PROD_PRINT_EMPLOYEE_PIPELINE_BRANCH:-}"
+DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH="${DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH:-}"
+PRINT_EMPLOYEE_GRAPHQL_URL="${PRINT_EMPLOYEE_GRAPHQL_URL:-}"
+PROD_PRINT_EMPLOYEE_GRAPHQL_URL="${PROD_PRINT_EMPLOYEE_GRAPHQL_URL:-}"
+DEV_PRINT_EMPLOYEE_GRAPHQL_URL="${DEV_PRINT_EMPLOYEE_GRAPHQL_URL:-}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
@@ -82,6 +91,9 @@ LIBRARY_EXAMPLE_CLIENT_PIPELINE_AUTO_TRIGGER="${LIBRARY_EXAMPLE_CLIENT_PIPELINE_
 ADD_EMPLOYEE_PIPELINE_JOB_NAME="${ADD_EMPLOYEE_PIPELINE_JOB_NAME:-add-employee}"
 ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN="${ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN:-}"
 ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER="${ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER:-false}"
+PRINT_EMPLOYEE_PIPELINE_JOB_NAME="${PRINT_EMPLOYEE_PIPELINE_JOB_NAME:-print-employee}"
+PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN="${PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN:-}"
+PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER="${PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER:-false}"
 
 AGENT_COUNT="${AGENT_COUNT:-2}"
 AGENT_EXECUTORS="${AGENT_EXECUTORS:-1}"
@@ -663,6 +675,109 @@ resolve_instance_add_employee_graphql_url() {
   fi
 }
 
+resolve_instance_print_employee_pipeline_repo_url() {
+  local mode="$1"
+  local instance="$2"
+
+  if [[ -n "${PRINT_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+    printf '%s' "${PRINT_EMPLOYEE_PIPELINE_REPO_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_PRINT_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${PROD_PRINT_EMPLOYEE_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/print-employee' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/print-employee' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    dev)
+      if [[ -n "${DEV_PRINT_EMPLOYEE_PIPELINE_REPO_URL}" ]]; then
+        printf '%s' "${DEV_PRINT_EMPLOYEE_PIPELINE_REPO_URL}"
+        return
+      fi
+      case "$mode" in
+        docker) printf 'http://host.docker.internal:3000/myuser/print-employee' ;;
+        bare) printf 'http://127.0.0.1:3000/myuser/print-employee' ;;
+        *)
+          echo "unknown mode: ${mode}" >&2
+          return 1
+          ;;
+      esac
+      return
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_print_employee_pipeline_branch() {
+  local instance="$1"
+
+  if [[ -n "${PRINT_EMPLOYEE_PIPELINE_BRANCH}" ]]; then
+    printf '%s' "${PRINT_EMPLOYEE_PIPELINE_BRANCH}"
+    return
+  fi
+
+  case "$instance" in
+    prod) printf '%s' "${PROD_PRINT_EMPLOYEE_PIPELINE_BRANCH:-${PROD_BRANCH}}" ;;
+    dev) printf '%s' "${DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH:-${DEV_BRANCH}}" ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+}
+
+resolve_instance_print_employee_graphql_url() {
+  local mode="$1"
+  local instance="$2"
+
+  if [[ -n "${PRINT_EMPLOYEE_GRAPHQL_URL}" ]]; then
+    printf '%s' "${PRINT_EMPLOYEE_GRAPHQL_URL}"
+    return
+  fi
+
+  case "$instance" in
+    prod)
+      if [[ -n "${PROD_PRINT_EMPLOYEE_GRAPHQL_URL}" ]]; then
+        printf '%s' "${PROD_PRINT_EMPLOYEE_GRAPHQL_URL}"
+        return
+      fi
+      ;;
+    dev)
+      if [[ -n "${DEV_PRINT_EMPLOYEE_GRAPHQL_URL}" ]]; then
+        printf '%s' "${DEV_PRINT_EMPLOYEE_GRAPHQL_URL}"
+        return
+      fi
+      ;;
+    *)
+      echo "unknown instance: ${instance}" >&2
+      return 1
+      ;;
+  esac
+
+  case "$mode" in
+    docker) printf 'http://host.docker.internal:8000/graphql' ;;
+    bare) printf 'http://127.0.0.1:8000/graphql' ;;
+    *)
+      echo "unknown mode: ${mode}" >&2
+      return 1
+      ;;
+  esac
+}
+
 read_env_file_value() {
   local file_path="$1"
   local key="$2"
@@ -799,6 +914,7 @@ print_pipeline_configuration() {
   echo "Pipeline branches: prod=${PROD_BRANCH}, dev=${DEV_BRANCH}"
   echo "Pipeline job name: ${PIPELINE_JOB_NAME}"
   echo "Pipeline script path: ${PIPELINE_SCRIPT_PATH}"
+  echo "Managed print-employee job name: ${PRINT_EMPLOYEE_PIPELINE_JOB_NAME}"
 }
 
 print_instance_urls() {

@@ -25,6 +25,7 @@ RUNTIME_DIR ?= $(MAKEFILE_DIR)runtime
 PID_FILE ?= $(BARE_STATE_DIR)/fastapi.pid
 LOG_FILE ?= $(BARE_STATE_DIR)/fastapi.log
 DOCKER_DATA_DIR ?= $(MAKEFILE_DIR)data
+DOCKER_LOG_FILE ?= $(DOCKER_DATA_DIR)/fastapi.log
 DATABASE_PATH ?= $(MAKEFILE_DIR)company.sqlite
 LEGACY_DATABASE_PATH ?= $(API_DIR)/company.sqlite
 
@@ -78,6 +79,7 @@ docker-up:
 	@for i in $$(seq 1 30); do \
 		if curl -fsS "$(API_URL)/schema.graphql" >/dev/null 2>&1; then \
 			echo "FastAPI is ready at $(API_URL)"; \
+			echo "Docker log file available on host at $(DOCKER_LOG_FILE)"; \
 			exit 0; \
 		fi; \
 		sleep 1; \
@@ -193,5 +195,7 @@ help:
 		"  MODE=$(MODE)" \
 		"  API_PORT=$(API_PORT)" \
 		"  API_URL=$(API_URL)" \
+		"  DOCKER_LOG_FILE=$(DOCKER_LOG_FILE)" \
+		"  LOG_FILE=$(LOG_FILE)" \
 		"  DATABASE_PATH=$(DATABASE_PATH)" \
 		"  LEGACY_DATABASE_PATH=$(LEGACY_DATABASE_PATH)"

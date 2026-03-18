@@ -5,6 +5,7 @@ services:
     container_name: playground-fastapi
     environment:
       DATABASE_PATH: /data/company.sqlite
+      FASTAPI_LOG_PATH: /data/fastapi.log
     ports:
       - "${API_PORT:-8000}:8000"
     restart: unless-stopped

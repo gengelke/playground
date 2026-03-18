@@ -32,7 +32,9 @@ fi
 for instance in prod dev; do
   home_dir="$(instance_home "$instance")"
   mkdir -p "$home_dir/init.groovy.d"
+  mkdir -p "$home_dir/scriptler/scripts"
   cp "$INIT_GROOVY_DIR/00-bootstrap.groovy" "$home_dir/init.groovy.d/00-bootstrap.groovy"
+  cp "${ROOT_DIR}/controller/scriptler/scripts/employee-selection.groovy" "$home_dir/scriptler/scripts/employee-selection.groovy"
 done
 
 echo "Bare setup completed"

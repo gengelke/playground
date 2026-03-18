@@ -22,6 +22,11 @@ make down MODE=docker
 make down MODE=bare
 ```
 
+Log file locations:
+
+- `MODE=docker`: `fastapi/data/fastapi.log` on the host, bind-mounted from `/data/fastapi.log` in the container
+- `MODE=bare`: `fastapi/runtime/bare/fastapi.log`
+
 Generate the GraphQL client library:
 
 ```bash
@@ -79,7 +84,9 @@ The API area generates local state in these locations:
 
 - `fastapi/.venv/`
 - `fastapi/data/`
+- `fastapi/data/fastapi.log`
 - `fastapi/runtime/`
+- `fastapi/runtime/bare/fastapi.log`
 - `fastapi/company.sqlite`
 - `graphql-library/.venv/`
 - `graphql-library/build/`

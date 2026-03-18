@@ -19,7 +19,7 @@ Both instances are configured from the same as-code bootstrap script and differ 
 - Separate branch per environment:
   - prod instance reads `PROD_BRANCH` (default `main`)
   - dev instance reads `DEV_BRANCH`
-- `example-pipeline` is auto-triggered on bootstrap by default; `generate-library`, `library-example-client`, and `add-employee` are created but not auto-triggered by default
+- `example-pipeline` is auto-triggered on bootstrap by default; `generate-library`, `library-example-client`, `add-employee`, and `print-employee` are created but not auto-triggered by default
 - Docker-mode Jenkins agents include the Docker CLI and bind the host Docker socket so pipeline steps can run Docker-backed targets when needed
 - Shared automation via `Makefile`
 - Two runtime modes:
@@ -43,6 +43,8 @@ Both Jenkins instances automatically create and run a pipeline job from git:
 - Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py workflow` using that installed package
 - Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), install `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py employee add` against the configured shared FastAPI instance
 - The `add-employee` job gets build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and an Active Choices dropdown `EMPLOYEE_ROLE`; the role values are fetched directly from the FastAPI `GET /roles` API by the Jenkins bootstrap configuration, and the job uses that same FastAPI instance for both its GraphQL call and its Nexus-installed client execution by default
+- Gitea bootstrap also prepares `myuser/print-employee` with a Jenkinsfile that reads the configured FastAPI GraphQL endpoint and prints the selected employee record to the build log
+- The `print-employee` job gets an Active Choices dropdown `EMPLOYEE_SELECTION`; the job references a reusable Scriptler script tracked in `jenkins/controller/scriptler/scripts/employee-selection.groovy`, so the parameter logic is shared instead of stored inline in the job configuration
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
 
 To use your own git repo as Repo A:
@@ -157,6 +159,12 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `PROD_ADD_EMPLOYEE_FASTAPI_ROLES_URL` / `DEV_ADD_EMPLOYEE_FASTAPI_ROLES_URL`
 - `ADD_EMPLOYEE_GRAPHQL_URL` (shared override used inside the `add-employee` job; default derived from `ADD_EMPLOYEE_FASTAPI_ROLES_URL`)
 - `PROD_ADD_EMPLOYEE_GRAPHQL_URL` / `DEV_ADD_EMPLOYEE_GRAPHQL_URL`
+- `PRINT_EMPLOYEE_PIPELINE_REPO_URL` (shared optional override for `print-employee`)
+- `PROD_PRINT_EMPLOYEE_PIPELINE_REPO_URL` / `DEV_PRINT_EMPLOYEE_PIPELINE_REPO_URL`
+- `PRINT_EMPLOYEE_PIPELINE_BRANCH` (shared optional branch override)
+- `PROD_PRINT_EMPLOYEE_PIPELINE_BRANCH` / `DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH`
+- `PRINT_EMPLOYEE_GRAPHQL_URL` (shared override for the controller-side employee dropdown and the pipeline runtime GraphQL lookup)
+- `PROD_PRINT_EMPLOYEE_GRAPHQL_URL` / `DEV_PRINT_EMPLOYEE_GRAPHQL_URL`
 - `PROD_BRANCH` (default `main`)
 - `DEV_BRANCH`
 - `PIPELINE_SCRIPT_PATH` (default `Jenkinsfile`)
@@ -170,6 +178,9 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `ADD_EMPLOYEE_PIPELINE_JOB_NAME` (default `add-employee`)
 - `ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN` (default empty)
 - `ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER` (default `false`)
+- `PRINT_EMPLOYEE_PIPELINE_JOB_NAME` (default `print-employee`)
+- `PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN` (default empty)
+- `PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER` (default `false`)
 - `AGENT_COUNT` (default `2`)
 - `AGENT_EXECUTORS` (default `1`)
 - `PROD_HTTP_PORT` (default `8081`)

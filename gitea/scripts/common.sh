@@ -233,6 +233,18 @@ resolve_add_employee_workflow_graphql_url() {
   rewrite_service_url_for_host "$value" "$host"
 }
 
+resolve_print_employee_workflow_graphql_url() {
+  local host
+  host="$(resolve_example_workflow_service_host)"
+  local value="${GITEA_PRINT_EMPLOYEE_WORKFLOW_GRAPHQL_URL:-}"
+
+  if [[ -z "$value" ]]; then
+    value="http://127.0.0.1:8000/graphql"
+  fi
+
+  rewrite_service_url_for_host "$value" "$host"
+}
+
 ensure_repo_actions_secret() {
   local instance_url="$1"
   local owner="$2"
@@ -524,6 +536,7 @@ ensure_bootstrap_repositories() {
   ensure_generate_library_repo
   ensure_library_example_client_repo
   ensure_add_employee_repo
+  ensure_print_employee_repo
 }
 
 ensure_example_pipeline_gitea_workflow() {
@@ -1405,6 +1418,170 @@ ensure_add_employee_repo() {
     "add-employee"
 
   ensure_add_employee_workflow
+}
+
+ensure_print_employee_repo() {
+  local auto_add="${GITEA_AUTO_ADD_PRINT_EMPLOYEE:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping print-employee setup (GITEA_AUTO_ADD_PRINT_EMPLOYEE=${GITEA_AUTO_ADD_PRINT_EMPLOYEE:-false})"
+      return 0
+      ;;
+  esac
+
+  local jenkinsfile
+  jenkinsfile="$(cat "${ROOT_DIR}/templates/print-employee.Jenkinsfile")"
+
+  ensure_repo_with_branch_jenkinsfiles \
+    "${GITEA_PRINT_EMPLOYEE_REPO:-print-employee}" \
+    "$jenkinsfile" \
+    "$jenkinsfile" \
+    "print-employee"
+
+  ensure_print_employee_workflow
+}
+
+ensure_print_employee_workflow() {
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  instance_url="${instance_url%/}"
+
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local repo_name="${GITEA_PRINT_EMPLOYEE_REPO:-print-employee}"
+  local file_path=".gitea/workflows/print-employee.yml"
+  local source_repo_url="${GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_branch="${GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_BRANCH:-main}"
+  local graphql_url
+  graphql_url="$(resolve_print_employee_workflow_graphql_url)"
+
+  local repo_body
+  repo_body="$(mktemp)"
+  local repo_status
+  repo_status="$(curl -sS -o "$repo_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+  if [[ "$repo_status" != "200" ]]; then
+    cat "$repo_body" >&2 || true
+    rm -f "$repo_body"
+    die "Failed to query repository metadata for '${owner}/${repo_name}' (HTTP ${repo_status})"
+  fi
+
+  local default_branch
+  default_branch="$(tr -d '\n' <"$repo_body" | sed -n 's/.*"default_branch"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n1)"
+  rm -f "$repo_body"
+  if [[ -z "$default_branch" ]]; then
+    default_branch="main"
+  fi
+
+  local workflow_content
+  workflow_content="$(cat <<'EOF'
+name: print-employee
+
+on:
+  workflow_dispatch:
+    inputs:
+      employee_id:
+        description: Employee id to fetch
+        required: true
+        default: "1"
+
+env:
+  PLAYGROUND_SOURCE_REPO_URL: "__SOURCE_REPO_URL__"
+  PLAYGROUND_SOURCE_BRANCH: "__SOURCE_REPO_BRANCH__"
+  GRAPHQL_URL: "__GRAPHQL_URL__"
+
+jobs:
+  print-employee:
+    runs-on: linux-amd64
+    steps:
+      - name: Prepare workspace
+        run: |
+          rm -rf playground
+
+      - name: Install required system packages
+        run: |
+          set -euo pipefail
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y git make python3-venv
+
+      - name: Clone source repository
+        run: |
+          set -euo pipefail
+          echo "Cloning ${PLAYGROUND_SOURCE_REPO_URL} (branch ${PLAYGROUND_SOURCE_BRANCH})"
+          git clone --depth 1 --branch "${PLAYGROUND_SOURCE_BRANCH}" "${PLAYGROUND_SOURCE_REPO_URL}" playground
+          test -f playground/api/example-client/company.py
+
+      - name: Validate Example Client CLI
+        run: |
+          set -euo pipefail
+          if ! (cd playground/api && example-client/company.py employee get --help 2>&1 | grep -q -- '--employee-id'); then
+            echo "The checked-out source at ${PLAYGROUND_SOURCE_REPO_URL} branch ${PLAYGROUND_SOURCE_BRANCH} does not provide employee lookup support in api/example-client/company.py."
+            exit 1
+          fi
+
+      - name: Generate local GraphQL client runtime
+        run: |
+          set -euo pipefail
+          make -C playground/api library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local
+
+      - name: Print employee details
+        env:
+          FORCE_COLOR: "1"
+          WORKFLOW_INPUT_EMPLOYEE_ID: "${{ inputs.employee_id }}"
+          EVENT_INPUT_EMPLOYEE_ID: "${{ github.event.inputs.employee_id }}"
+        run: |
+          set -euo pipefail
+          employee_id="${WORKFLOW_INPUT_EMPLOYEE_ID:-}"
+          if [ -z "${employee_id}" ]; then
+            employee_id="${EVENT_INPUT_EMPLOYEE_ID:-}"
+          fi
+          if [ -z "${employee_id}" ] && [ -n "${GITHUB_EVENT_PATH:-}" ] && [ -f "${GITHUB_EVENT_PATH}" ]; then
+            employee_id="$(python3 -c 'import json, os; event_path = os.environ.get("GITHUB_EVENT_PATH", ""); payload = json.load(open(event_path, "r", encoding="utf-8")) if event_path and os.path.isfile(event_path) else {}; print((((payload.get("inputs") or {}).get("employee_id")) or ""), end="")')"
+          fi
+          if [ -z "${employee_id}" ]; then
+            employee_id="1"
+          fi
+          PYTHONPATH="playground/api/graphql-library/generated${PYTHONPATH:+:${PYTHONPATH}}" \
+          playground/api/graphql-library/.venv/bin/python \
+            playground/api/example-client/company.py \
+            --graphql-url "${GRAPHQL_URL}" \
+            employee get \
+            --employee-id "${employee_id}"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf playground
+EOF
+)"
+  workflow_content="${workflow_content//__SOURCE_REPO_URL__/$source_repo_url}"
+  workflow_content="${workflow_content//__SOURCE_REPO_BRANCH__/$source_branch}"
+  workflow_content="${workflow_content//__GRAPHQL_URL__/$graphql_url}"
+
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "$default_branch" \
+    "chore: sync print-employee gitea workflow" \
+    "$workflow_content"
+  ensure_repo_file_in_branch \
+    "$instance_url" \
+    "$owner" \
+    "$password" \
+    "$repo_name" \
+    "$file_path" \
+    "dev" \
+    "chore: sync print-employee gitea workflow" \
+    "$workflow_content"
+
+  log "Ensured print-employee workflow in '${owner}/${repo_name}:${file_path}'"
 }
 
 ensure_add_employee_workflow() {

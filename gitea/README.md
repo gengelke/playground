@@ -69,6 +69,11 @@ GITEA_ADD_EMPLOYEE_REPO=add-employee
 GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
 GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_BRANCH=main
 GITEA_ADD_EMPLOYEE_WORKFLOW_GRAPHQL_URL=<auto by mode>
+GITEA_AUTO_ADD_PRINT_EMPLOYEE=true
+GITEA_PRINT_EMPLOYEE_REPO=print-employee
+GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
+GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_BRANCH=main
+GITEA_PRINT_EMPLOYEE_WORKFLOW_GRAPHQL_URL=<auto by mode>
 RUNNER1_NAME=agent-runner-1
 RUNNER2_NAME=agent-runner-2
 RUNNER_LABELS_DOCKER=linux-amd64:docker://node:20-bookworm
@@ -123,6 +128,18 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - uses the configured shared FastAPI instance for both the Jenkins role dropdown and the GraphQL mutation call
   - calls `api/example-client/company.py employee add --employee-name ... --employee-surname ... --employee-role ...`
   - is meant to be used from Jenkins with build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and a role dropdown backed by the FastAPI `GET /roles` API
+- `make up` also ensures a private repository (`print-employee`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
+  - expects to be used from Jenkins with an Active Choices build parameter named `EMPLOYEE_SELECTION`
+  - fetches employee choices from the shared FastAPI GraphQL `employees` query
+  - fetches the same GraphQL employee list again during the build and prints the selected employee object to the console log
+- The same `print-employee` repo also gets a managed Gitea Actions workflow at `.gitea/workflows/print-employee.yml` on its default and `dev` branches:
+  - clones the configured print-employee workflow source repo/branch
+  - generates the local GraphQL client runtime from the checked-out source tree
+  - runs `api/example-client/company.py employee get` with workflow-dispatch input `employee_id`
+  - does not require managed Gitea Actions secrets
+- `GITEA_PRINT_EMPLOYEE_WORKFLOW_GRAPHQL_URL` defaults by mode:
+  - `MODE=docker`: `http://host.docker.internal:8000/graphql`
+  - `MODE=bare`: `http://127.0.0.1:8000/graphql`
 - The same `add-employee` repo also gets a managed Gitea Actions workflow at `.gitea/workflows/add-employee.yml` on its default and `dev` branches:
   - clones the configured add-employee workflow source repo/branch
   - uses managed Gitea Actions secrets `VAULT_ADDR` and `VAULT_TOKEN`

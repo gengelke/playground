@@ -30,6 +30,7 @@ start_controller() {
   local library_example_client_repo_url library_example_client_branch library_example_client_source_repo_url library_example_client_source_branch
   local add_employee_repo_url add_employee_branch add_employee_source_repo_url add_employee_source_branch
   local add_employee_fastapi_roles_url add_employee_graphql_url
+  local print_employee_repo_url print_employee_branch print_employee_graphql_url
 
   name="$(instance_name "$instance")"
   branch="$(instance_branch "$instance")"
@@ -51,6 +52,9 @@ start_controller() {
   add_employee_source_branch="$(resolve_instance_add_employee_source_branch "$instance")"
   add_employee_fastapi_roles_url="$(resolve_instance_add_employee_fastapi_roles_url bare "$instance")"
   add_employee_graphql_url="$(resolve_instance_add_employee_graphql_url bare "$instance")"
+  print_employee_repo_url="$(resolve_instance_print_employee_pipeline_repo_url bare "$instance")"
+  print_employee_branch="$(resolve_instance_print_employee_pipeline_branch "$instance")"
+  print_employee_graphql_url="$(resolve_instance_print_employee_graphql_url bare "$instance")"
   port="$(instance_http_port "$instance")"
   base_url="$(instance_base_url "$instance")"
   root_url="$(resolve_instance_root_url "$instance")"
@@ -90,6 +94,9 @@ start_controller() {
     export ADD_EMPLOYEE_SOURCE_BRANCH="$add_employee_source_branch"
     export ADD_EMPLOYEE_FASTAPI_ROLES_URL="$add_employee_fastapi_roles_url"
     export ADD_EMPLOYEE_GRAPHQL_URL="$add_employee_graphql_url"
+    export PRINT_EMPLOYEE_PIPELINE_REPO_URL="$print_employee_repo_url"
+    export PRINT_EMPLOYEE_PIPELINE_BRANCH="$print_employee_branch"
+    export PRINT_EMPLOYEE_GRAPHQL_URL="$print_employee_graphql_url"
     export PIPELINE_SCRIPT_PATH="$PIPELINE_SCRIPT_PATH"
     export PIPELINE_JOB_NAME="$PIPELINE_JOB_NAME"
     export PIPELINE_AUTH_TOKEN="$PIPELINE_AUTH_TOKEN"
@@ -101,6 +108,9 @@ start_controller() {
     export ADD_EMPLOYEE_PIPELINE_JOB_NAME="$ADD_EMPLOYEE_PIPELINE_JOB_NAME"
     export ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN="$ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN"
     export ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER="$ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER"
+    export PRINT_EMPLOYEE_PIPELINE_JOB_NAME="$PRINT_EMPLOYEE_PIPELINE_JOB_NAME"
+    export PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN="$PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN"
+    export PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER="$PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER"
     export AGENT_COUNT="$AGENT_COUNT"
     export AGENT_EXECUTORS="$AGENT_EXECUTORS"
     export JENKINS_ADMIN_USER="$JENKINS_ADMIN_USER"

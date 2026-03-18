@@ -15,6 +15,8 @@ import java.util.LinkedList
 
 def env = System.getenv()
 def jenkins = Jenkins.get()
+def jenkinsHomeDir = env.getOrDefault("JENKINS_HOME", jenkins.getRootDir().absolutePath)
+def scriptlerScriptsDir = new File(new File(jenkinsHomeDir, "scriptler"), "scripts")
 
 def instanceName = env.getOrDefault("JENKINS_INSTANCE_NAME", "jenkins")
 def pipelineRepoUrl = env.getOrDefault("PIPELINE_REPO_URL", "https://github.com/example/jenkins-pipelines.git")
@@ -40,6 +42,12 @@ def addEmployeePipelineJobName = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_JOB_NAM
 def addEmployeePipelineAuthToken = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_AUTH_TOKEN", "")
 def addEmployeePipelineAutoTrigger = env.getOrDefault("ADD_EMPLOYEE_PIPELINE_AUTO_TRIGGER", "false")
 def addEmployeeFastapiRolesUrl = env.getOrDefault("ADD_EMPLOYEE_FASTAPI_ROLES_URL", "http://host.docker.internal:8000/roles")
+def printEmployeePipelineRepoUrl = env.getOrDefault("PRINT_EMPLOYEE_PIPELINE_REPO_URL", "http://host.docker.internal:3000/myuser/print-employee")
+def printEmployeePipelineBranch = env.getOrDefault("PRINT_EMPLOYEE_PIPELINE_BRANCH", pipelineBranch)
+def printEmployeePipelineJobName = env.getOrDefault("PRINT_EMPLOYEE_PIPELINE_JOB_NAME", "print-employee")
+def printEmployeePipelineAuthToken = env.getOrDefault("PRINT_EMPLOYEE_PIPELINE_AUTH_TOKEN", "")
+def printEmployeePipelineAutoTrigger = env.getOrDefault("PRINT_EMPLOYEE_PIPELINE_AUTO_TRIGGER", "false")
+def printEmployeeGraphqlUrl = env.getOrDefault("PRINT_EMPLOYEE_GRAPHQL_URL", "http://host.docker.internal:8000/graphql")
 def agentCount = (env.getOrDefault("AGENT_COUNT", "2") as Integer)
 def agentExecutors = (env.getOrDefault("AGENT_EXECUTORS", "1") as Integer)
 def agentRemoteFs = env.getOrDefault("AGENT_REMOTE_FS", "/home/jenkins/agent")
@@ -94,6 +102,19 @@ def parseBooleanEnv = { String value, boolean defaultValue ->
       println("[bootstrap] invalid boolean value '${value}', using default ${defaultValue}")
       return defaultValue
   }
+}
+
+def loadManagedScriptText = { File baseDir, String scriptName, Map replacements ->
+  def scriptFile = new File(baseDir, scriptName)
+  if (!scriptFile.isFile()) {
+    throw new IllegalStateException("managed parameter script not found: ${scriptFile.absolutePath}")
+  }
+
+  def scriptText = scriptFile.getText("UTF-8")
+  replacements.each { token, replacement ->
+    scriptText = scriptText.replace(token, replacement ?: "")
+  }
+  return scriptText.trim()
 }
 
 if (!adminPassword?.trim()) {
@@ -193,10 +214,16 @@ def parametersDefinitionPropertyClass = optionalClass("hudson.model.ParametersDe
 def stringParameterDefinitionClass = optionalClass("hudson.model.StringParameterDefinition")
 def choiceParameterClass = optionalClass("org.biouno.unochoice.ChoiceParameter")
 def groovyScriptClass = optionalClass("org.biouno.unochoice.model.GroovyScript")
+def scriptlerScriptClass = optionalClass("org.biouno.unochoice.model.ScriptlerScript")
 def secureGroovyScriptClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.sandbox.groovy.SecureGroovyScript")
 def scriptApprovalClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.ScriptApproval")
 def approvalContextClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.ApprovalContext")
 def groovyLanguageClass = optionalClass("org.jenkinsci.plugins.scriptsecurity.scripts.languages.GroovyLanguage")
+def scriptlerBuilderClass = optionalClass("org.jenkinsci.plugins.scriptler.builder.ScriptlerBuilder")
+def scriptlerParameterClass = optionalClass("org.jenkinsci.plugins.scriptler.config.Parameter")
+def scriptlerConfigurationClass = optionalClass("org.jenkinsci.plugins.scriptler.config.ScriptlerConfiguration")
+def scriptlerCatalogScriptClass = optionalClass("org.jenkinsci.plugins.scriptler.config.Script")
+def scriptlerHelperClass = optionalClass("org.jenkinsci.plugins.scriptler.util.ScriptHelper")
 
 if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecClass && userRemoteConfigClass) {
   try {
@@ -272,6 +299,92 @@ return roles ?: ['Developer', 'Senior Developer', 'Superhero', 'AvD']
       println("[bootstrap] configured add-employee parameters for ${pipelineJob.name}")
     }
 
+    def configurePrintEmployeeParameters = { pipelineJob, graphqlUrl ->
+      if (!(parametersDefinitionPropertyClass && stringParameterDefinitionClass)) {
+        println("[bootstrap] parameter classes unavailable; skipping print-employee parameters for ${pipelineJob.name}")
+        return
+      }
+
+      if (!(choiceParameterClass && scriptlerScriptClass && scriptlerBuilderClass && scriptlerParameterClass && scriptlerConfigurationClass && scriptlerCatalogScriptClass)) {
+        println("[bootstrap] active choices classes unavailable; configuring only text parameter for ${pipelineJob.name}")
+        pipelineJob.removeProperty(parametersDefinitionPropertyClass)
+        pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance([
+          stringParameterDefinitionClass.newInstance("EMPLOYEE_SELECTION", "", "Employee selection in the format '<id> - <name> <surname> (<role>)'.")
+        ]))
+        println("[bootstrap] configured print-employee text parameter for ${pipelineJob.name}")
+        return
+      }
+
+      try {
+        scriptlerScriptsDir.mkdirs()
+        def managedScriptId = "employee-selection.groovy"
+        def managedScriptText = loadManagedScriptText(scriptlerScriptsDir, managedScriptId, [:])
+
+        def scriptlerParameterDefinitions = [
+          scriptlerParameterClass.newInstance("GRAPHQL_URL", graphqlUrl)
+        ]
+        def managedScript = scriptlerCatalogScriptClass.newInstance(
+          managedScriptId,
+          "Employee Selection",
+          "Loads employee options from the configured FastAPI GraphQL endpoint.",
+          true,
+          scriptlerParameterDefinitions,
+          false
+        )
+        def scriptlerConfiguration = scriptlerConfigurationClass.getConfiguration()
+        scriptlerConfiguration.addOrReplace(managedScript)
+        scriptlerConfiguration.save()
+
+        if (scriptApprovalClass && groovyLanguageClass) {
+          try {
+            def scriptApproval = scriptApprovalClass.get()
+            def groovyLanguage = groovyLanguageClass.get()
+            scriptApproval.preapprove(managedScriptText, groovyLanguage)
+
+            if (scriptlerHelperClass) {
+              def helperBackedScript = scriptlerHelperClass.getScript(managedScriptId, true)
+              def helperBackedScriptText = helperBackedScript?.getScript()
+              if (helperBackedScriptText?.trim()) {
+                scriptApproval.preapprove(helperBackedScriptText, groovyLanguage)
+              }
+            }
+
+            scriptApproval.save()
+          } catch (Exception approvalError) {
+            println("[bootstrap] failed to preapprove Scriptler employee-selection.groovy: ${approvalError.class.simpleName}: ${approvalError.message}")
+          }
+        }
+
+        def scriptlerBuilder = scriptlerBuilderClass.newInstance(
+          "${pipelineJob.name}-employee-selection".replaceAll("[^A-Za-z0-9._-]", "-"),
+          managedScriptId,
+          false,
+          scriptlerParameterDefinitions
+        )
+        def reusableScript = scriptlerScriptClass.newInstance(scriptlerBuilder, Boolean.FALSE)
+        def employeeParameter = choiceParameterClass.newInstance(
+          "EMPLOYEE_SELECTION",
+          "Select an employee. Values are loaded from the shared Scriptler script.",
+          "${pipelineJob.name}-employee-selection".replaceAll("[^A-Za-z0-9._-]", "-"),
+          reusableScript,
+          "PT_SINGLE_SELECT",
+          false,
+          1
+        )
+
+        pipelineJob.removeProperty(parametersDefinitionPropertyClass)
+        pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance([employeeParameter]))
+        println("[bootstrap] configured print-employee parameters for ${pipelineJob.name}")
+      } catch (Exception scriptError) {
+        println("[bootstrap] failed to configure Scriptler-backed print-employee parameter: ${scriptError.class.simpleName}: ${scriptError.message}")
+        pipelineJob.removeProperty(parametersDefinitionPropertyClass)
+        pipelineJob.addProperty(parametersDefinitionPropertyClass.newInstance([
+          stringParameterDefinitionClass.newInstance("EMPLOYEE_SELECTION", "", "Employee selection in the format '<id> - <name> <surname> (<role>)'.")
+        ]))
+        println("[bootstrap] configured print-employee text parameter for ${pipelineJob.name}")
+      }
+    }
+
     def ensureManagedGitCredentials = { String credentialId, String username, String password, String credentialLabel ->
       if (!credentialId?.trim()) {
         return
@@ -329,6 +442,7 @@ return roles ?: ['Developer', 'Senior Developer', 'Superhero', 'AvD']
       def gitUsername = config.gitUsername
       def gitPassword = config.gitPassword
       def dynamicRoleChoicesUrl = config.dynamicRoleChoicesUrl
+      def dynamicEmployeeChoicesGraphqlUrl = config.dynamicEmployeeChoicesGraphqlUrl
 
       if (!jobName?.trim()) {
         println("[bootstrap] skipped pipeline configuration due to empty job name")
@@ -383,6 +497,10 @@ Pipeline script path: ${scriptPath}
 
       if (dynamicRoleChoicesUrl?.trim()) {
         configureAddEmployeeParameters(pipelineJob, dynamicRoleChoicesUrl)
+      }
+
+      if (dynamicEmployeeChoicesGraphqlUrl?.trim()) {
+        configurePrintEmployeeParameters(pipelineJob, dynamicEmployeeChoicesGraphqlUrl)
       }
 
       if (authToken?.trim()) {
@@ -460,6 +578,19 @@ Pipeline script path: ${scriptPath}
       gitUsername: pipelineGitUsername,
       gitPassword: pipelineGitPassword,
       dynamicRoleChoicesUrl: addEmployeeFastapiRolesUrl
+    ])
+
+    configurePipelineJob([
+      jobName: printEmployeePipelineJobName,
+      repoUrl: printEmployeePipelineRepoUrl,
+      branch: printEmployeePipelineBranch,
+      scriptPath: pipelineScriptPath,
+      authToken: printEmployeePipelineAuthToken,
+      autoTrigger: printEmployeePipelineAutoTrigger,
+      gitCredentialsId: pipelineGitCredentialsId,
+      gitUsername: pipelineGitUsername,
+      gitPassword: pipelineGitPassword,
+      dynamicEmployeeChoicesGraphqlUrl: printEmployeeGraphqlUrl
     ])
   } catch (Exception e) {
     println("[bootstrap] pipeline job configuration skipped due to error: ${e.class.simpleName}: ${e.message}")
