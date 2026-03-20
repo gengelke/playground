@@ -11,6 +11,7 @@ import hudson.slaves.RetentionStrategy
 import jenkins.model.Jenkins
 import jenkins.model.JenkinsLocationConfiguration
 
+import java.util.Base64
 import java.util.LinkedList
 
 def env = System.getenv()
@@ -249,12 +250,17 @@ if (workflowJobClass && cpsScmFlowDefinitionClass && gitScmClass && branchSpecCl
       def fallbackScriptText = "return ['Developer', 'Senior Developer', 'Superhero', 'AvD']"
       def parameterScriptText = """
 import groovy.json.JsonSlurperClassic
+import java.util.Base64
 
 def rolesUrl = System.getenv('ADD_EMPLOYEE_FASTAPI_ROLES_URL') ?: '${rolesUrl}'
+def authUser = System.getenv('FASTAPI_BASIC_AUTH_USERNAME') ?: 'admin'
+def authPassword = System.getenv('FASTAPI_BASIC_AUTH_PASSWORD') ?: 'password'
+def authToken = Base64.encoder.encodeToString((authUser + ':' + authPassword).getBytes('UTF-8'))
 def connection = new URL(rolesUrl).openConnection()
 connection.setConnectTimeout(5000)
 connection.setReadTimeout(5000)
 connection.setRequestProperty('Accept', 'application/json')
+connection.setRequestProperty('Authorization', 'Basic ' + authToken)
 def payload = connection.inputStream.withCloseable { it.getText('UTF-8') }
 def parsed = new JsonSlurperClassic().parseText(payload)
 def roles = (parsed instanceof List ? parsed : []).collect { item ->

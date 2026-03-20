@@ -245,6 +245,22 @@ resolve_print_employee_workflow_graphql_url() {
   rewrite_service_url_for_host "$value" "$host"
 }
 
+resolve_local_gitea_repo_url_for_host() {
+  local host="$1"
+  local owner="${GITEA_USER:-myuser}"
+  local repo_name="${GITEA_PLAYGROUND_SOURCE_REPO:-playground}"
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+
+  instance_url="${instance_url%/}"
+  instance_url="$(rewrite_service_url_for_host "$instance_url" "$host")"
+  printf '%s/%s/%s.git' "$instance_url" "$owner" "$repo_name"
+}
+
+resolve_local_playground_source_repo_url() {
+  resolve_local_gitea_repo_url_for_host "$(resolve_example_workflow_service_host)"
+}
+
 ensure_repo_actions_secret() {
   local instance_url="$1"
   local owner="$2"
@@ -530,6 +546,7 @@ generate_and_persist_runner_token() {
 }
 
 ensure_bootstrap_repositories() {
+  ensure_playground_source_repo
   remove_example_workflow_repo
   ensure_example_pipeline_repo
   ensure_example_pipeline_gitea_workflow
@@ -537,6 +554,97 @@ ensure_bootstrap_repositories() {
   ensure_library_example_client_repo
   ensure_add_employee_repo
   ensure_print_employee_repo
+}
+
+ensure_playground_source_repo() {
+  local auto_add="${GITEA_AUTO_ADD_PLAYGROUND_SOURCE_REPO:-true}"
+  auto_add="$(printf '%s' "$auto_add" | tr '[:upper:]' '[:lower:]')"
+  case "$auto_add" in
+    1|true|yes|on) ;;
+    *)
+      log "Skipping playground source repo setup (GITEA_AUTO_ADD_PLAYGROUND_SOURCE_REPO=${GITEA_AUTO_ADD_PLAYGROUND_SOURCE_REPO:-false})"
+      return 0
+      ;;
+  esac
+
+  require_cmd git
+
+  local source_dir="${ROOT_DIR}/.."
+  local repo_name="${GITEA_PLAYGROUND_SOURCE_REPO:-playground}"
+  local gitea_http_port="${GITEA_HTTP_PORT:-3000}"
+  local instance_url="${GITEA_ROOT_URL:-http://localhost:${gitea_http_port}/}"
+  local owner="${GITEA_USER:-myuser}"
+  local password="${GITEA_USER_PASSWORD:-password}"
+  local email="${GITEA_USER_EMAIL:-myuser@example.com}"
+
+  instance_url="${instance_url%/}"
+
+  local create_body
+  create_body="$(mktemp)"
+  local create_payload
+  create_payload="$(printf '{"name":"%s","auto_init":false,"private":false}' "$repo_name")"
+  local create_status
+  create_status="$(curl -sS -o "$create_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X POST \
+    --data "$create_payload" \
+    "${instance_url}/api/v1/user/repos" || true)"
+
+  if [[ "$create_status" != "201" && "$create_status" != "409" ]]; then
+    cat "$create_body" >&2 || true
+    rm -f "$create_body"
+    die "Failed to create playground source repository '${owner}/${repo_name}' (HTTP ${create_status})"
+  fi
+  rm -f "$create_body"
+
+  local update_body
+  update_body="$(mktemp)"
+  local update_status
+  update_status="$(curl -sS -o "$update_body" -w '%{http_code}' \
+    --user "${owner}:${password}" \
+    -H 'Content-Type: application/json' \
+    -X PATCH \
+    --data '{"private":false}' \
+    "${instance_url}/api/v1/repos/${owner}/${repo_name}" || true)"
+
+  if [[ "$update_status" != "200" ]]; then
+    cat "$update_body" >&2 || true
+    rm -f "$update_body"
+    die "Failed to mark playground source repository '${owner}/${repo_name}' as public (HTTP ${update_status})"
+  fi
+  rm -f "$update_body"
+
+  local sync_dir
+  sync_dir="$(mktemp -d)"
+  local auth_header
+  auth_header="$(printf '%s:%s' "$owner" "$password" | base64 | tr -d '\n')"
+  local remote_url="${instance_url}/${owner}/${repo_name}.git"
+
+  (
+    cd "$sync_dir"
+    git init --initial-branch=main >/dev/null
+    git config user.name "Gitea Bootstrap"
+    git config user.email "$email"
+  )
+
+  while IFS= read -r -d '' relative_path; do
+    mkdir -p "${sync_dir}/$(dirname "$relative_path")"
+    cp -pP "${source_dir}/${relative_path}" "${sync_dir}/${relative_path}"
+  done < <(git -C "$source_dir" ls-files -co --exclude-standard -z)
+
+  (
+    cd "$sync_dir"
+    git add -A
+    git commit -m "chore: sync local playground source snapshot" >/dev/null
+    git branch dev
+    git remote add origin "$remote_url"
+    git -c "http.extraHeader=Authorization: Basic ${auth_header}" push --force origin main >/dev/null
+    git -c "http.extraHeader=Authorization: Basic ${auth_header}" push --force origin dev >/dev/null
+  )
+
+  rm -rf "$sync_dir"
+  log "Ensured public playground source repo '${owner}/${repo_name}' from local workspace"
 }
 
 ensure_example_pipeline_gitea_workflow() {
@@ -931,7 +1039,7 @@ ensure_generate_library_workflow() {
   local password="${GITEA_USER_PASSWORD:-password}"
   local repo_name="${GITEA_GENERATE_LIBRARY_REPO:-generate-library}"
   local file_path=".gitea/workflows/generate-library.yml"
-  local source_repo_url="${GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_repo_url="${GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_REPO_URL:-$(resolve_local_playground_source_repo_url)}"
   local source_branch="${GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_BRANCH:-main}"
   local service_host
   service_host="$(resolve_example_workflow_service_host)"
@@ -1233,7 +1341,7 @@ ensure_library_example_client_workflow() {
   local password="${GITEA_USER_PASSWORD:-password}"
   local repo_name="${GITEA_LIBRARY_EXAMPLE_CLIENT_REPO:-library-example-client}"
   local file_path=".gitea/workflows/library-example-client.yml"
-  local source_repo_url="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_repo_url="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_REPO_URL:-$(resolve_local_playground_source_repo_url)}"
   local source_branch="${GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_BRANCH:-main}"
   local graphql_url
   graphql_url="$(resolve_example_workflow_graphql_url)"
@@ -1335,6 +1443,8 @@ jobs:
           FORCE_COLOR: "1"
         run: |
           set -euo pipefail
+          export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+          export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
           . .venv-library-example-client/bin/activate
           python playground/api/example-client/company.py \
             --graphql-url "${GRAPHQL_URL}" \
@@ -1452,7 +1562,7 @@ ensure_print_employee_workflow() {
   local password="${GITEA_USER_PASSWORD:-password}"
   local repo_name="${GITEA_PRINT_EMPLOYEE_REPO:-print-employee}"
   local file_path=".gitea/workflows/print-employee.yml"
-  local source_repo_url="${GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_repo_url="${GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-$(resolve_local_playground_source_repo_url)}"
   local source_branch="${GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_BRANCH:-main}"
   local graphql_url
   graphql_url="$(resolve_print_employee_workflow_graphql_url)"
@@ -1535,6 +1645,8 @@ jobs:
           EVENT_INPUT_EMPLOYEE_ID: "${{ github.event.inputs.employee_id }}"
         run: |
           set -euo pipefail
+          export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+          export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
           employee_id="${WORKFLOW_INPUT_EMPLOYEE_ID:-}"
           if [ -z "${employee_id}" ]; then
             employee_id="${EVENT_INPUT_EMPLOYEE_ID:-}"
@@ -1593,7 +1705,7 @@ ensure_add_employee_workflow() {
   local password="${GITEA_USER_PASSWORD:-password}"
   local repo_name="${GITEA_ADD_EMPLOYEE_REPO:-add-employee}"
   local file_path=".gitea/workflows/add-employee.yml"
-  local source_repo_url="${GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+  local source_repo_url="${GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL:-$(resolve_local_playground_source_repo_url)}"
   local source_branch="${GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_BRANCH:-main}"
   local graphql_url
   graphql_url="$(resolve_add_employee_workflow_graphql_url)"
@@ -1719,6 +1831,8 @@ jobs:
           FORCE_COLOR: "1"
         run: |
           set -euo pipefail
+          export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+          export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
           employee_name="${{ github.event.inputs.employee_name }}"
           employee_surname="${{ github.event.inputs.employee_surname }}"
           employee_role="${{ github.event.inputs.employee_role }}"

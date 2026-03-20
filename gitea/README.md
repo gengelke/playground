@@ -55,23 +55,25 @@ GITEA_AUTO_ADD_EXAMPLE_PIPELINE_WORKFLOW=true
 GITEA_REMOVE_EXAMPLE_WORKFLOW_REPO=false
 GITEA_AUTO_ADD_EXAMPLE_PIPELINE=true
 GITEA_EXAMPLE_PIPELINE_REPO=example-pipeline
+GITEA_AUTO_ADD_PLAYGROUND_SOURCE_REPO=true
+GITEA_PLAYGROUND_SOURCE_REPO=playground
 GITEA_AUTO_ADD_GENERATE_LIBRARY=true
 GITEA_GENERATE_LIBRARY_REPO=generate-library
-GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
+GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_REPO_URL=http://localhost:3000/myuser/playground.git
 GITEA_GENERATE_LIBRARY_WORKFLOW_SOURCE_BRANCH=main
 GITEA_AUTO_ADD_LIBRARY_EXAMPLE_CLIENT=true
 GITEA_LIBRARY_EXAMPLE_CLIENT_REPO=library-example-client
-GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
+GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_REPO_URL=http://localhost:3000/myuser/playground.git
 GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_SOURCE_BRANCH=main
 GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_GRAPHQL_URL=<auto by mode>
 GITEA_AUTO_ADD_ADD_EMPLOYEE=true
 GITEA_ADD_EMPLOYEE_REPO=add-employee
-GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
+GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=http://localhost:3000/myuser/playground.git
 GITEA_ADD_EMPLOYEE_WORKFLOW_SOURCE_BRANCH=main
 GITEA_ADD_EMPLOYEE_WORKFLOW_GRAPHQL_URL=<auto by mode>
 GITEA_AUTO_ADD_PRINT_EMPLOYEE=true
 GITEA_PRINT_EMPLOYEE_REPO=print-employee
-GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=https://github.com/gengelke/playground.git
+GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_REPO_URL=http://localhost:3000/myuser/playground.git
 GITEA_PRINT_EMPLOYEE_WORKFLOW_SOURCE_BRANCH=main
 GITEA_PRINT_EMPLOYEE_WORKFLOW_GRAPHQL_URL=<auto by mode>
 RUNNER1_NAME=agent-runner-1
@@ -96,8 +98,9 @@ RUNNER_LABELS_BARE=linux-amd64:host
 - The same `example-pipeline` repo also gets a managed Gitea Actions workflow at `.gitea/workflows/example-pipeline.yml` on its default and `dev` branches:
   - prints `Hello World` on push and manual dispatch
 - Optional: set `GITEA_REMOVE_EXAMPLE_WORKFLOW_REPO=true` to remove the legacy `actions-example` repo during bootstrap.
+- `make up` also ensures a private repository (`playground`) exists for `myuser` and force-syncs it from the current local workspace to branches `main` and `dev`
 - `make up` also ensures a private repository (`generate-library`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
-  - checks out the configured generate-library source repo (default `https://github.com/gengelke/playground.git`)
+  - checks out the configured generate-library source repo (default local Gitea `http://localhost:3000/myuser/playground.git`)
   - uses the configured generate-library source branch, defaulting to the job branch
   - runs `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`
   - builds and uploads the `fastapi-graphql-client` package from `api/graphql-library` to the Nexus PyPI repo `pypi-public`
@@ -109,7 +112,7 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - runs `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`
   - builds and uploads the `fastapi-graphql-client` package to Nexus
 - `make up` also ensures a private repository (`library-example-client`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
-  - checks out the configured library-example-client source repo (default `https://github.com/gengelke/playground.git`)
+  - checks out the configured library-example-client source repo (default local Gitea `http://localhost:3000/myuser/playground.git`)
   - starts the FastAPI service in bare mode
   - installs `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`
   - runs `api/example-client/company.py workflow` using the installed package
@@ -122,8 +125,9 @@ RUNNER_LABELS_BARE=linux-amd64:host
 - `GITEA_LIBRARY_EXAMPLE_CLIENT_WORKFLOW_GRAPHQL_URL` defaults by mode:
   - `MODE=docker`: `http://host.docker.internal:8000/graphql`
   - `MODE=bare`: `http://127.0.0.1:8000/graphql`
+  - workflows and managed Jenkinsfiles expect FastAPI Basic Auth credentials via `FASTAPI_BASIC_AUTH_USERNAME` / `FASTAPI_BASIC_AUTH_PASSWORD` and default to `admin` / `password`
 - `make up` also ensures a private repository (`add-employee`) exists for `myuser` with the managed `Jenkinsfile` on its default and `dev` branches:
-  - checks out the configured add-employee source repo (default `https://github.com/gengelke/playground.git`)
+  - checks out the configured add-employee source repo (default local Gitea `http://localhost:3000/myuser/playground.git`)
   - installs `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`
   - uses the configured shared FastAPI instance for both the Jenkins role dropdown and the GraphQL mutation call
   - calls `api/example-client/company.py employee add --employee-name ... --employee-surname ... --employee-role ...`
@@ -133,7 +137,7 @@ RUNNER_LABELS_BARE=linux-amd64:host
   - fetches employee choices from the shared FastAPI GraphQL `employees` query
   - fetches the same GraphQL employee list again during the build and prints the selected employee object to the console log
 - The same `print-employee` repo also gets a managed Gitea Actions workflow at `.gitea/workflows/print-employee.yml` on its default and `dev` branches:
-  - clones the configured print-employee workflow source repo/branch
+  - clones the configured print-employee workflow source repo/branch (default local Gitea `http://localhost:3000/myuser/playground.git`)
   - generates the local GraphQL client runtime from the checked-out source tree
   - runs `api/example-client/company.py employee get` with workflow-dispatch input `employee_id`
   - does not require managed Gitea Actions secrets

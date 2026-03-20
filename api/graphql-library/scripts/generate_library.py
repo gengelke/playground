@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib.util
+import os
 import re
 import shutil
 import subprocess
@@ -28,6 +30,8 @@ from graphql import (
 PACKAGE_NAME = "fastapi_graphql_client"
 CLIENT_NAME = "FastAPIGraphQLClient"
 WORD_BOUNDARY = re.compile(r"(?<!^)(?=[A-Z])")
+DEFAULT_BASIC_AUTH_USER = os.getenv("FASTAPI_BASIC_AUTH_USERNAME", "admin")
+DEFAULT_BASIC_AUTH_PASSWORD = os.getenv("FASTAPI_BASIC_AUTH_PASSWORD", "password")
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,7 +54,22 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Path to fastapi/main.py used when --schema-source=local.",
     )
+    parser.add_argument(
+        "--basic-auth-user",
+        default=DEFAULT_BASIC_AUTH_USER,
+        help="FastAPI basic auth username used for remote schema loading.",
+    )
+    parser.add_argument(
+        "--basic-auth-password",
+        default=DEFAULT_BASIC_AUTH_PASSWORD,
+        help="FastAPI basic auth password used for remote schema loading.",
+    )
     return parser.parse_args()
+
+
+def build_basic_auth_headers(username: str, password: str) -> dict[str, str]:
+    token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
 
 
 def main() -> None:
@@ -75,7 +94,7 @@ def main() -> None:
     else:
         schema = get_graphql_schema_from_url(
             url=args.remote_schema_url,
-            headers={},
+            headers=build_basic_auth_headers(args.basic_auth_user, args.basic_auth_password),
             verify_ssl=True,
             timeout=30,
         )

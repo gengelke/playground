@@ -78,6 +78,8 @@ DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH="${DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH:-}"
 PRINT_EMPLOYEE_GRAPHQL_URL="${PRINT_EMPLOYEE_GRAPHQL_URL:-}"
 PROD_PRINT_EMPLOYEE_GRAPHQL_URL="${PROD_PRINT_EMPLOYEE_GRAPHQL_URL:-}"
 DEV_PRINT_EMPLOYEE_GRAPHQL_URL="${DEV_PRINT_EMPLOYEE_GRAPHQL_URL:-}"
+FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
 PROD_BRANCH="${PROD_BRANCH:-main}"
 DEV_BRANCH="${DEV_BRANCH:-dev}"
 PIPELINE_SCRIPT_PATH="${PIPELINE_SCRIPT_PATH:-Jenkinsfile}"
@@ -292,6 +294,7 @@ resolve_instance_generate_library_pipeline_branch() {
 
 resolve_instance_generate_library_source_repo_url() {
   local instance="$1"
+  local mode="${2:-docker}"
 
   if [[ -n "${GENERATE_LIBRARY_SOURCE_REPO_URL}" ]]; then
     printf '%s' "${GENERATE_LIBRARY_SOURCE_REPO_URL}"
@@ -317,7 +320,7 @@ resolve_instance_generate_library_source_repo_url() {
       ;;
   esac
 
-  printf '%s' 'https://github.com/gengelke/playground.git'
+  resolve_local_playground_source_repo_url "$mode"
 }
 
 resolve_instance_generate_library_source_branch() {
@@ -417,6 +420,7 @@ resolve_instance_library_example_client_pipeline_branch() {
 
 resolve_instance_library_example_client_source_repo_url() {
   local instance="$1"
+  local mode="${2:-docker}"
 
   if [[ -n "${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}" ]]; then
     printf '%s' "${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL}"
@@ -442,7 +446,7 @@ resolve_instance_library_example_client_source_repo_url() {
       ;;
   esac
 
-  printf '%s' 'https://github.com/gengelke/playground.git'
+  resolve_local_playground_source_repo_url "$mode"
 }
 
 resolve_instance_library_example_client_source_branch() {
@@ -542,6 +546,7 @@ resolve_instance_add_employee_pipeline_branch() {
 
 resolve_instance_add_employee_source_repo_url() {
   local instance="$1"
+  local mode="${2:-docker}"
 
   if [[ -n "${ADD_EMPLOYEE_SOURCE_REPO_URL}" ]]; then
     printf '%s' "${ADD_EMPLOYEE_SOURCE_REPO_URL}"
@@ -567,7 +572,7 @@ resolve_instance_add_employee_source_repo_url() {
       ;;
   esac
 
-  printf '%s' 'https://github.com/gengelke/playground.git'
+  resolve_local_playground_source_repo_url "$mode"
 }
 
 resolve_instance_add_employee_source_branch() {
@@ -800,6 +805,30 @@ normalize_localhost_for_mode() {
     -e 's#http://127.0.0.1#http://host.docker.internal#g' \
     -e 's#https://localhost#https://host.docker.internal#g' \
     -e 's#https://127.0.0.1#https://host.docker.internal#g'
+}
+
+resolve_local_playground_source_repo_url() {
+  local mode="$1"
+  local gitea_user repo_name
+
+  gitea_user="$(read_env_file_value "$GITEA_GENERATED_ENV_FILE" "GITEA_USER" 2>/dev/null || true)"
+  repo_name="$(read_env_file_value "$GITEA_GENERATED_ENV_FILE" "GITEA_PLAYGROUND_SOURCE_REPO" 2>/dev/null || true)"
+
+  if [[ -z "$gitea_user" ]]; then
+    gitea_user="myuser"
+  fi
+  if [[ -z "$repo_name" ]]; then
+    repo_name="playground"
+  fi
+
+  case "$mode" in
+    docker) printf 'http://host.docker.internal:3000/%s/%s.git' "$gitea_user" "$repo_name" ;;
+    bare) printf 'http://127.0.0.1:3000/%s/%s.git' "$gitea_user" "$repo_name" ;;
+    *)
+      echo "unknown mode: ${mode}" >&2
+      return 1
+      ;;
+  esac
 }
 
 resolve_vault_addr() {

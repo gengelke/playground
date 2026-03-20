@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import logging
 import os
+import secrets
 import sqlite3
 from contextlib import asynccontextmanager, contextmanager
 from logging.handlers import RotatingFileHandler
@@ -32,6 +35,9 @@ LOG_LEVEL = getattr(logging, os.getenv("FASTAPI_LOG_LEVEL", "INFO").upper(), log
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(name)s] %(message)s"
 DATABASE_INIT_LOCK = Lock()
 DATABASE_INITIALIZED = False
+FASTAPI_BASIC_AUTH_USERNAME = os.getenv("FASTAPI_BASIC_AUTH_USERNAME", "admin")
+FASTAPI_BASIC_AUTH_PASSWORD = os.getenv("FASTAPI_BASIC_AUTH_PASSWORD", "password")
+PUBLIC_PATHS = frozenset({"/healthz"})
 
 
 # =====================================================
@@ -73,6 +79,38 @@ def configure_logging() -> logging.Logger:
 
 
 LOGGER = configure_logging()
+
+
+def path_is_public(path: str) -> bool:
+    return path in PUBLIC_PATHS
+
+
+def unauthorized_response() -> Response:
+    return Response(
+        status_code=401,
+        headers={"WWW-Authenticate": 'Basic realm="FastAPI"'},
+    )
+
+
+def request_has_valid_basic_auth(request: Request) -> bool:
+    authorization = request.headers.get("Authorization", "")
+    scheme, _, encoded_credentials = authorization.partition(" ")
+    if scheme.lower() != "basic" or not encoded_credentials:
+        return False
+
+    try:
+        decoded = base64.b64decode(encoded_credentials, validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return False
+
+    username, separator, password = decoded.partition(":")
+    if not separator:
+        return False
+
+    return (
+        secrets.compare_digest(username, FASTAPI_BASIC_AUTH_USERNAME)
+        and secrets.compare_digest(password, FASTAPI_BASIC_AUTH_PASSWORD)
+    )
 
 
 # =====================================================
@@ -353,7 +391,10 @@ app = FastAPI(lifespan=lifespan)
 async def log_requests(request: Request, call_next):
     started_at = perf_counter()
     try:
-        response = await call_next(request)
+        if path_is_public(request.url.path) or request_has_valid_basic_auth(request):
+            response = await call_next(request)
+        else:
+            response = unauthorized_response()
     except Exception:
         duration_ms = (perf_counter() - started_at) * 1000
         LOGGER.exception(
@@ -384,6 +425,11 @@ class Employee(BaseModel):
     name: str
     surname: str
     role: str
+
+
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok"}
 
 
 # -------- GET all employees --------

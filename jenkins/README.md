@@ -39,13 +39,15 @@ Both Jenkins instances automatically create and run a pipeline job from git:
 - `jenkins-dev` uses `http://host.docker.internal:3000/myuser/example-pipeline` branch `dev` by default
 - Both instances check out with Jenkins-managed credentials (`pipeline-git-prod` / `pipeline-git-dev`) when available
 - The default `example-pipeline` Jenkinsfile is branch-specific: `main` prints `hello prod world`, `dev` prints `hello dev world`
-- Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), run `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, and upload it to the Nexus PyPI repo `pypi-public`
-- Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py workflow` using that installed package
-- Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (default `https://github.com/gengelke/playground.git`, branch defaults to the job branch), install `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py employee add` against the configured shared FastAPI instance
+- Gitea bootstrap also prepares and syncs `myuser/playground` from the current local workspace; managed Jenkins jobs default to cloning that local Gitea repo
+- Gitea bootstrap also prepares `myuser/generate-library` with Jenkinsfiles that clone the configured generate-library source repo (default local Gitea `http://127.0.0.1:3000/myuser/playground.git` in bare mode or `http://host.docker.internal:3000/myuser/playground.git` in docker mode, branch defaults to the job branch), run `make library-generate MODE=bare LIBRARY_SCHEMA_SOURCE=local` in `api/`, build the `fastapi-graphql-client` package from `api/graphql-library`, and upload it to the Nexus PyPI repo `pypi-public`
+- Gitea bootstrap also prepares `myuser/library-example-client` with Jenkinsfiles that clone the configured source repo (same local Gitea `playground` repo by default, branch defaults to the job branch), start FastAPI in bare mode, install `fastapi-graphql-client` from Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py workflow` using that installed package
+- Gitea bootstrap also prepares `myuser/add-employee` with Jenkinsfiles that clone the configured source repo (same local Gitea `playground` repo by default, branch defaults to the job branch), install `fastapi-graphql-client` from the Nexus PyPI repo `pypi-public`, and run `api/example-client/company.py employee add` against the configured shared FastAPI instance
 - The `add-employee` job gets build parameters `EMPLOYEE_NAME`, `EMPLOYEE_SURNAME`, and an Active Choices dropdown `EMPLOYEE_ROLE`; the role values are fetched directly from the FastAPI `GET /roles` API by the Jenkins bootstrap configuration, and the job uses that same FastAPI instance for both its GraphQL call and its Nexus-installed client execution by default
 - Gitea bootstrap also prepares `myuser/print-employee` with a Jenkinsfile that reads the configured FastAPI GraphQL endpoint and prints the selected employee record to the build log
 - The `print-employee` job gets an Active Choices dropdown `EMPLOYEE_SELECTION`; the job references a reusable Scriptler script tracked in `jenkins/controller/scriptler/scripts/employee-selection.groovy`, so the parameter logic is shared instead of stored inline in the job configuration
 - The example pipeline is remote-triggerable with auth token `example-pipeline-auth-token` by default.
+- FastAPI-facing Jenkins components use shared Basic Auth credentials from `FASTAPI_BASIC_AUTH_USERNAME` / `FASTAPI_BASIC_AUTH_PASSWORD` and default to `admin` / `password`.
 
 To use your own git repo as Repo A:
 
@@ -165,6 +167,7 @@ curl -u admin:password "http://127.0.0.1:8081/job/example-pipeline/build?token=e
 - `PROD_PRINT_EMPLOYEE_PIPELINE_BRANCH` / `DEV_PRINT_EMPLOYEE_PIPELINE_BRANCH`
 - `PRINT_EMPLOYEE_GRAPHQL_URL` (shared override for the controller-side employee dropdown and the pipeline runtime GraphQL lookup)
 - `PROD_PRINT_EMPLOYEE_GRAPHQL_URL` / `DEV_PRINT_EMPLOYEE_GRAPHQL_URL`
+- `FASTAPI_BASIC_AUTH_USERNAME` / `FASTAPI_BASIC_AUTH_PASSWORD` (shared FastAPI Basic Auth credentials used by controller scripts and pipelines; defaults `admin` / `password`)
 - `PROD_BRANCH` (default `main`)
 - `DEV_BRANCH`
 - `PIPELINE_SCRIPT_PATH` (default `Jenkinsfile`)

@@ -59,7 +59,7 @@ banner() {
   printf '\\n========== %s ==========%s' "$1" "\\n"
 }
 
-source_repo_url="${ADD_EMPLOYEE_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+source_repo_url="${ADD_EMPLOYEE_SOURCE_REPO_URL:-http://host.docker.internal:3000/myuser/playground.git}"
 source_branch="${ADD_EMPLOYEE_SOURCE_BRANCH:-${ADD_EMPLOYEE_PIPELINE_BRANCH:-main}}"
 
 banner "Prepare Workspace"
@@ -99,10 +99,14 @@ fi
               ? "${rolesUrl[0..-7]}/graphql"
               : "${rolesUrl.replaceFirst('/+$', '')}/graphql"
           }
+          def fastapiBasicAuthUser = (env.FASTAPI_BASIC_AUTH_USERNAME ?: 'admin').trim()
+          def fastapiBasicAuthPassword = env.FASTAPI_BASIC_AUTH_PASSWORD ?: 'password'
 
           withEnv([
             "EFFECTIVE_ADD_EMPLOYEE_FASTAPI_ROLES_URL=${rolesUrl}",
             "EFFECTIVE_ADD_EMPLOYEE_GRAPHQL_URL=${graphqlUrl}",
+            "FASTAPI_BASIC_AUTH_USERNAME=${fastapiBasicAuthUser}",
+            "FASTAPI_BASIC_AUTH_PASSWORD=${fastapiBasicAuthPassword}",
           ]) {
             sh '''#!/usr/bin/env bash
 set -euo pipefail
@@ -112,6 +116,9 @@ banner() {
 }
 
 source .nexus.env
+
+export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
 
 employee_name="${EMPLOYEE_NAME:-}"
 employee_surname="${EMPLOYEE_SURNAME:-}"

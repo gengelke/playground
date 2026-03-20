@@ -91,7 +91,7 @@ banner() {
   printf '\\n========== %s ==========%s' "$1" "\\n"
 }
 
-source_repo_url="${GENERATE_LIBRARY_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+source_repo_url="${GENERATE_LIBRARY_SOURCE_REPO_URL:-http://host.docker.internal:3000/myuser/playground.git}"
 source_branch="${GENERATE_LIBRARY_SOURCE_BRANCH:-${GENERATE_LIBRARY_PIPELINE_BRANCH:-main}}"
 
 banner "Prepare Workspace"

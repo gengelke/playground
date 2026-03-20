@@ -8,8 +8,14 @@ pipeline {
           if (!graphqlUrl) {
             graphqlUrl = 'http://host.docker.internal:8000/graphql'
           }
+          def fastapiBasicAuthUser = (env.FASTAPI_BASIC_AUTH_USERNAME ?: 'admin').trim()
+          def fastapiBasicAuthPassword = env.FASTAPI_BASIC_AUTH_PASSWORD ?: 'password'
 
-          withEnv(["EFFECTIVE_PRINT_EMPLOYEE_GRAPHQL_URL=${graphqlUrl}"]) {
+          withEnv([
+            "EFFECTIVE_PRINT_EMPLOYEE_GRAPHQL_URL=${graphqlUrl}",
+            "FASTAPI_BASIC_AUTH_USERNAME=${fastapiBasicAuthUser}",
+            "FASTAPI_BASIC_AUTH_PASSWORD=${fastapiBasicAuthPassword}",
+          ]) {
             sh '''#!/usr/bin/env bash
 set -euo pipefail
 
@@ -19,6 +25,8 @@ banner() {
 
 selection="${EMPLOYEE_SELECTION:-}"
 graphql_url="${EFFECTIVE_PRINT_EMPLOYEE_GRAPHQL_URL}"
+auth_user="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+auth_password="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
 
 banner "Validate Build Parameters"
 if [[ -z "$selection" ]]; then
@@ -58,6 +66,7 @@ PY
 graphql_response="$(curl -fsS \
   -H 'Accept: application/json' \
   -H 'Content-Type: application/json' \
+  -u "${auth_user}:${auth_password}" \
   --data "$graphql_payload" \
   "$graphql_url")"
 

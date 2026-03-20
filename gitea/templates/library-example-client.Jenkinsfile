@@ -59,7 +59,7 @@ banner() {
   printf '\\n========== %s ==========%s' "$1" "\\n"
 }
 
-source_repo_url="${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-https://github.com/gengelke/playground.git}"
+source_repo_url="${LIBRARY_EXAMPLE_CLIENT_SOURCE_REPO_URL:-http://host.docker.internal:3000/myuser/playground.git}"
 source_branch="${LIBRARY_EXAMPLE_CLIENT_SOURCE_BRANCH:-${LIBRARY_EXAMPLE_CLIENT_PIPELINE_BRANCH:-main}}"
 
 banner "Prepare Workspace"
@@ -99,6 +99,8 @@ banner() {
 banner "Start FastAPI In Bare Mode"
 
 cd playground/api
+export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
 make up MODE=bare
 '''
       }
@@ -106,7 +108,15 @@ make up MODE=bare
 
     stage('Install Package And Run Example Client') {
       steps {
-        sh '''#!/usr/bin/env bash
+        script {
+          def fastapiBasicAuthUser = (env.FASTAPI_BASIC_AUTH_USERNAME ?: 'admin').trim()
+          def fastapiBasicAuthPassword = env.FASTAPI_BASIC_AUTH_PASSWORD ?: 'password'
+
+          withEnv([
+            "FASTAPI_BASIC_AUTH_USERNAME=${fastapiBasicAuthUser}",
+            "FASTAPI_BASIC_AUTH_PASSWORD=${fastapiBasicAuthPassword}",
+          ]) {
+            sh '''#!/usr/bin/env bash
 set -euo pipefail
 
 banner() {
@@ -114,6 +124,9 @@ banner() {
 }
 
 source .nexus.env
+
+export FASTAPI_BASIC_AUTH_USERNAME="${FASTAPI_BASIC_AUTH_USERNAME:-admin}"
+export FASTAPI_BASIC_AUTH_PASSWORD="${FASTAPI_BASIC_AUTH_PASSWORD:-password}"
 
 banner "Prepare Example Client Environment"
 
@@ -154,6 +167,8 @@ FORCE_COLOR=1 COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP=1 python api/example-client
   --graphql-url "${LIBRARY_EXAMPLE_CLIENT_GRAPHQL_URL:-http://127.0.0.1:8000/graphql}" \
   workflow
 '''
+          }
+        }
       }
     }
   }

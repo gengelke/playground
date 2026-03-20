@@ -27,6 +27,10 @@ Log file locations:
 - `MODE=docker`: `fastapi/data/fastapi.log` on the host, bind-mounted from `/data/fastapi.log` in the container
 - `MODE=bare`: `fastapi/runtime/bare/fastapi.log`
 
+FastAPI now requires HTTP Basic Auth on all REST, GraphQL, docs, and schema endpoints.
+Defaults are `FASTAPI_BASIC_AUTH_USERNAME=admin` and `FASTAPI_BASIC_AUTH_PASSWORD=password`.
+`GET /healthz` stays unauthenticated for readiness checks.
+
 Generate the GraphQL client library:
 
 ```bash
@@ -62,18 +66,19 @@ Useful FastAPI endpoints:
 Run the example client CLI directly from `api/`:
 
 ```bash
+FASTAPI_BASIC_AUTH_USERNAME=admin FASTAPI_BASIC_AUTH_PASSWORD=password \
 ./example-client/company.py employee add --employee-name Erika --employee-surname Mustermann --employee-role Developer
-./example-client/company.py employee update --employee-id 4711 --employee-name Erika --employee-surname Mustermann --employee-role "Senior Developer"
-./example-client/company.py employee delete --employee-id 4711
-./example-client/company.py employee get --employee-id 4711
-./example-client/company.py employee list
-./example-client/company.py role add --role Architect
-./example-client/company.py role get --role Architect
-./example-client/company.py role get --id 5
-./example-client/company.py role delete --role Architect
-./example-client/company.py role delete --id 5
-./example-client/company.py role list
-./example-client/company.py workflow --employee-name Erika --employee-surname Mustermann --employee-role Developer
+./example-client/company.py --basic-auth-user admin --basic-auth-password password employee update --employee-id 4711 --employee-name Erika --employee-surname Mustermann --employee-role "Senior Developer"
+./example-client/company.py --basic-auth-user admin --basic-auth-password password employee delete --employee-id 4711
+./example-client/company.py --basic-auth-user admin --basic-auth-password password employee get --employee-id 4711
+./example-client/company.py --basic-auth-user admin --basic-auth-password password employee list
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role add --role Architect
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role get --role Architect
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role get --id 5
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role delete --role Architect
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role delete --id 5
+./example-client/company.py --basic-auth-user admin --basic-auth-password password role list
+./example-client/company.py --basic-auth-user admin --basic-auth-password password workflow --employee-name Erika --employee-surname Mustermann --employee-role Developer
 ```
 
 Single commands print JSON results. The `workflow` command prints step-by-step tables.

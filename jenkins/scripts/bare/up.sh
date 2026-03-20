@@ -40,15 +40,15 @@ start_controller() {
   git_password="$(resolve_instance_pipeline_git_password bare "$instance")"
   generate_library_repo_url="$(resolve_instance_generate_library_pipeline_repo_url bare "$instance")"
   generate_library_branch="$(resolve_instance_generate_library_pipeline_branch "$instance")"
-  generate_library_source_repo_url="$(resolve_instance_generate_library_source_repo_url "$instance")"
+  generate_library_source_repo_url="$(resolve_instance_generate_library_source_repo_url "$instance" bare)"
   generate_library_source_branch="$(resolve_instance_generate_library_source_branch "$instance")"
   library_example_client_repo_url="$(resolve_instance_library_example_client_pipeline_repo_url bare "$instance")"
   library_example_client_branch="$(resolve_instance_library_example_client_pipeline_branch "$instance")"
-  library_example_client_source_repo_url="$(resolve_instance_library_example_client_source_repo_url "$instance")"
+  library_example_client_source_repo_url="$(resolve_instance_library_example_client_source_repo_url "$instance" bare)"
   library_example_client_source_branch="$(resolve_instance_library_example_client_source_branch "$instance")"
   add_employee_repo_url="$(resolve_instance_add_employee_pipeline_repo_url bare "$instance")"
   add_employee_branch="$(resolve_instance_add_employee_pipeline_branch "$instance")"
-  add_employee_source_repo_url="$(resolve_instance_add_employee_source_repo_url "$instance")"
+  add_employee_source_repo_url="$(resolve_instance_add_employee_source_repo_url "$instance" bare)"
   add_employee_source_branch="$(resolve_instance_add_employee_source_branch "$instance")"
   add_employee_fastapi_roles_url="$(resolve_instance_add_employee_fastapi_roles_url bare "$instance")"
   add_employee_graphql_url="$(resolve_instance_add_employee_graphql_url bare "$instance")"
@@ -97,6 +97,8 @@ start_controller() {
     export PRINT_EMPLOYEE_PIPELINE_REPO_URL="$print_employee_repo_url"
     export PRINT_EMPLOYEE_PIPELINE_BRANCH="$print_employee_branch"
     export PRINT_EMPLOYEE_GRAPHQL_URL="$print_employee_graphql_url"
+    export FASTAPI_BASIC_AUTH_USERNAME="$FASTAPI_BASIC_AUTH_USERNAME"
+    export FASTAPI_BASIC_AUTH_PASSWORD="$FASTAPI_BASIC_AUTH_PASSWORD"
     export PIPELINE_SCRIPT_PATH="$PIPELINE_SCRIPT_PATH"
     export PIPELINE_JOB_NAME="$PIPELINE_JOB_NAME"
     export PIPELINE_AUTH_TOKEN="$PIPELINE_AUTH_TOKEN"
@@ -219,6 +221,8 @@ start_agent() {
   secret="$(fetch_agent_secret "$instance" "$index")"
 
   echo "Starting ${node_name}"
+  FASTAPI_BASIC_AUTH_USERNAME="$FASTAPI_BASIC_AUTH_USERNAME" \
+  FASTAPI_BASIC_AUTH_PASSWORD="$FASTAPI_BASIC_AUTH_PASSWORD" \
   TZ="$JENKINS_TIMEZONE" nohup "$JAVA_BIN" -Duser.timezone="$JENKINS_TIMEZONE" -jar "$agent_jar" \
     -url "$base_url" \
     -name "$node_name" \

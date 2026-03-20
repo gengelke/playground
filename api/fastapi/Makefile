@@ -77,7 +77,7 @@ docker-up:
 	@mkdir -p "$(DOCKER_DATA_DIR)"
 	@API_PORT="$(API_PORT)" $(DOCKER_COMPOSE) up --build -d fastapi
 	@for i in $$(seq 1 30); do \
-		if curl -fsS "$(API_URL)/schema.graphql" >/dev/null 2>&1; then \
+		if curl -fsS "$(API_URL)/healthz" >/dev/null 2>&1; then \
 			echo "FastAPI is ready at $(API_URL)"; \
 			echo "Docker log file available on host at $(DOCKER_LOG_FILE)"; \
 			exit 0; \
@@ -117,7 +117,7 @@ bare-up: bare-build
 		nohup "$(UVICORN)" main:app --host 127.0.0.1 --port "$(API_PORT)" \
 		>"$(LOG_FILE)" 2>&1 & echo $$! >"$(PID_FILE)"
 	@for i in $$(seq 1 30); do \
-		if curl -fsS "$(API_URL)/docs" >/dev/null 2>&1; then \
+		if curl -fsS "$(API_URL)/healthz" >/dev/null 2>&1; then \
 			echo "FastAPI is ready at $(API_URL)"; \
 			exit 0; \
 		fi; \

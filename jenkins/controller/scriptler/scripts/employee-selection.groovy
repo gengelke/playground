@@ -7,6 +7,9 @@ if (!graphqlUrl) {
     System.getenv('PRINT_EMPLOYEE_GRAPHQL_URL') ?:
     'http://host.docker.internal:8000/graphql'
 }
+def authUser = System.getenv('FASTAPI_BASIC_AUTH_USERNAME') ?: 'admin'
+def authPassword = System.getenv('FASTAPI_BASIC_AUTH_PASSWORD') ?: 'password'
+def authToken = "${authUser}:${authPassword}".getBytes('UTF-8').encodeBase64().toString()
 
 def requestBody = JsonOutput.toJson([
   query: '''
@@ -28,6 +31,7 @@ connection.setConnectTimeout(5000)
 connection.setReadTimeout(5000)
 connection.setRequestProperty('Accept', 'application/json')
 connection.setRequestProperty('Content-Type', 'application/json')
+connection.setRequestProperty('Authorization', "Basic ${authToken}")
 connection.outputStream.withCloseable { output ->
   output.write(requestBody.getBytes('UTF-8'))
 }

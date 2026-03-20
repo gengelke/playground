@@ -69,6 +69,8 @@ docker-run:
 	@$(MAKE) -C "$(GRAPHQL_LIBRARY_DIR)" docker-deps MODE="docker" API_PORT="$(API_PORT)"
 	@$(DOCKER) run --rm \
 		--user "$$(id -u):$$(id -g)" \
+		-e FASTAPI_BASIC_AUTH_USERNAME \
+		-e FASTAPI_BASIC_AUTH_PASSWORD \
 		-v "$(ROOT_DIR):$(DOCKER_API_DIR)" \
 		-w "$(DOCKER_WORKDIR)" \
 		"$(DOCKER_IMAGE)" \

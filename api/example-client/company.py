@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib.util
 import json
 import os
@@ -19,6 +20,8 @@ GRAPHQL_LIBRARY_CODE = GRAPHQL_LIBRARY / "generated"
 GRAPHQL_CLIENT_FILE  = GRAPHQL_LIBRARY_CODE / "fastapi_graphql_client" / "client.py"
 DEFAULT_GRAPHQL_URL  = os.getenv("API_URL", "http://127.0.0.1:8000/graphql")
 DEFAULT_ROLES        = ("Developer", "Senior Developer", "Superhero", "AvD")
+DEFAULT_BASIC_AUTH_USER = os.getenv("FASTAPI_BASIC_AUTH_USERNAME", "admin")
+DEFAULT_BASIC_AUTH_PASSWORD = os.getenv("FASTAPI_BASIC_AUTH_PASSWORD", "password")
 BOOTSTRAP_ENV_VAR    = "COMPANY_CLIENT_BOOTSTRAPPED"
 DISABLE_BOOTSTRAP_ENV_VAR = "COMPANY_CLIENT_DISABLE_LOCAL_BOOTSTRAP"
 
@@ -115,6 +118,24 @@ def employee_summary(
 
 def infer_mode(graphql_url: str) -> str:
     return "docker" if "host.docker.internal" in graphql_url else "bare"
+
+
+def build_basic_auth_header(username: str, password: str) -> str:
+    token = base64.b64encode(f"{username}:{password}".encode("utf-8")).decode("ascii")
+    return f"Basic {token}"
+
+
+def build_graphql_headers(args: argparse.Namespace) -> dict[str, str]:
+    return {"Authorization": build_basic_auth_header(args.basic_auth_user, args.basic_auth_password)}
+
+
+def graphql_client(args: argparse.Namespace):
+    from fastapi_graphql_client import FastAPIGraphQLClient
+
+    return FastAPIGraphQLClient(
+        url=args.graphql_url,
+        headers=build_graphql_headers(args),
+    )
 
 
 def bootstrap_library_environment() -> None:
@@ -313,6 +334,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_GRAPHQL_URL,
         help="GraphQL endpoint URL.",
     )
+    parser.add_argument(
+        "--basic-auth-user",
+        default=DEFAULT_BASIC_AUTH_USER,
+        help="FastAPI basic auth username.",
+    )
+    parser.add_argument(
+        "--basic-auth-password",
+        default=DEFAULT_BASIC_AUTH_PASSWORD,
+        help="FastAPI basic auth password.",
+    )
 
     components = parser.add_subparsers(
         dest="component",
@@ -395,9 +426,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def add_employee(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.mutation_add_employee(
             employee_id=args.employee_id,
             name=args.employee_name,
@@ -407,9 +436,7 @@ def add_employee(args: argparse.Namespace) -> object:
 
 
 def update_employee(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.mutation_update_employee(
             employee_id=args.employee_id,
             name=args.employee_name,
@@ -419,23 +446,17 @@ def update_employee(args: argparse.Namespace) -> object:
 
 
 def delete_employee(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.mutation_delete_employee(employee_id=args.employee_id)
 
 
 def add_role(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.mutation_add_role(role=args.role)
 
 
 def get_role(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         if args.id is not None:
             return client.query_role(id=args.id)
         result = client.query_roles()
@@ -447,46 +468,35 @@ def get_role(args: argparse.Namespace) -> object:
 
 
 def delete_role(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         if args.id is not None:
             return client.mutation_delete_role_by_id(id=args.id)
         return client.mutation_delete_role(role=args.role)
 
 
 def get_employee(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.query_employee(args.employee_id)
 
 
 def get_all_employees(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.query_employees()
 
 
 def get_roles(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import FastAPIGraphQLClient
-
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         return client.query_roles()
 
 
 def workflow(args: argparse.Namespace) -> object:
-    from fastapi_graphql_client import (
-        FastAPIGraphQLClient,
-        GraphQLClientGraphQLMultiError,
-    )
+    from fastapi_graphql_client import GraphQLClientGraphQLMultiError
 
     print("\n\n" + GREEN + LOGO + RESET)
     print(f"{GREY}endpoint: {args.graphql_url}{RESET}")
 
     created = False
-    with FastAPIGraphQLClient(url=args.graphql_url) as client:
+    with graphql_client(args) as client:
         try:
             try:
                 print_step(
@@ -586,13 +596,17 @@ def main() -> None:
 
     ensure_runtime(args.graphql_url)
 
-    from fastapi_graphql_client import GraphQLClientGraphQLMultiError
+    from fastapi_graphql_client import GraphQLClientGraphQLMultiError, GraphQLClientHttpError
     import httpx
 
     try:
         result = args.handler(args)
     except GraphQLClientGraphQLMultiError as exc:
         fail(f"GraphQL error: {exc}", exit_code=classify_graphql_error(exc))
+    except GraphQLClientHttpError as exc:
+        if exc.status_code == 401:
+            fail("Authentication failed: invalid FastAPI basic auth credentials.")
+        fail(f"HTTP error from GraphQL endpoint: {exc}")
     except httpx.ConnectError as exc:
         fail(
             f"Connection error: could not connect to {args.graphql_url}. "

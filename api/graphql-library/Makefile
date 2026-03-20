@@ -85,6 +85,8 @@ docker-generate: docker-deps
 	fi
 	@$(DOCKER) run --rm \
 		--user "$$(id -u):$$(id -g)" \
+		-e FASTAPI_BASIC_AUTH_USERNAME \
+		-e FASTAPI_BASIC_AUTH_PASSWORD \
 		-v "$(API_DIR):$(DOCKER_API_DIR)" \
 		-w "$(DOCKER_WORKDIR)" \
 		"$(DOCKER_IMAGE)" \
