@@ -24,12 +24,64 @@ See [gitlab/README.md](gitlab/README.md).
 See [nexus/README.md](nexus/README.md).
 - `api`: FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. <BR>
 See [api/README.md](api/README.md).
+- `ollama`: Local Ollama LLM runtime in Docker with persistent model storage and automatic `llama3.1` pull. <BR>
+See [ollama/README.md](ollama/README.md).
+- `chatbot`: Local-first Python/FastAPI chatbot with CLI, REST API, web UI, configurable rules/tools/sources, SQLite document chunks, and optional Qdrant RAG. It can run standalone or connect to other playground services through config. <BR>
+See [chatbot/README.md](chatbot/README.md).
 - `jenkins`: Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. <BR>
 See [jenkins/README.md](jenkins/README.md).
+- `nginx`: Local HTTPS nginx service serving a static example page with the repository README image. <BR>
+See [nginx/README.md](nginx/README.md).
+
+## Chatbot quick start
+
+The chatbot is an optional playground component. It is useful for trying a
+simple local-first assistant that can answer deterministic configured rules,
+run explicitly whitelisted commands, read local documents, query configured
+SQLite/REST sources, and use Qdrant plus the local Ollama LLM.
+
+Run locally with a Python virtual environment:
+
+```bash
+cd chatbot
+make run MODE=bare
+```
+
+The chatbot Makefile also starts the `ollama` service and pulls `llama3.1` if
+needed.
+
+Run with Docker Compose, including Qdrant:
+
+```bash
+cd chatbot
+make up MODE=docker
+```
+
+Open the web UI at:
+
+```text
+http://127.0.0.1:8088
+```
+
+CLI and REST examples:
+
+```bash
+cd chatbot
+make ingest PATHS='sample_docs'
+.venv/bin/python -m app.cli ask "How are you?"
+curl -s http://127.0.0.1:8088/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"How are you?"}'
+```
+
+Integrations with Jenkins, Gitea, Nexus, Vault, or other local playground
+services are configured in `chatbot/config/config.yml`; they are not hardcoded
+into the chatbot.
 
 ## Top-level orchestration
 
-A top-level `Makefile` can orchestrate all services.
+A top-level `Makefile` can orchestrate all services, including Ollama and the
+chatbot.
 
 Start all services in dependency order:
 
@@ -45,7 +97,7 @@ make down MODE=docker
 
 Dependency order:
 
-`vault -> gitea -> gitlab -> nexus -> api -> jenkins`
+`vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> ollama -> chatbot`
 
 Vault-dependent services (`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and will reuse the current `MODE`.
 
@@ -59,7 +111,7 @@ make distclean
 make distclan
 ```
 
-That cleanup currently runs `distclean` for `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`.
+That cleanup currently runs `distclean` for `chatbot`, `ollama`, `nginx`, `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`.
 
 ## Central Port Configuration
 

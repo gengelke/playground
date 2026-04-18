@@ -6,12 +6,12 @@ MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 MODE ?= docker
 
-SERVICES := vault gitea gitlab nexus api jenkins
+SERVICES := vault gitea gitlab nexus api jenkins nginx ollama chatbot
 START_ORDER := $(SERVICES)
-STOP_ORDER := jenkins api nexus gitlab gitea vault
-DEVOPS_ORDER := vault nexus api gitea jenkins
-DEVOPS_STOP_ORDER := jenkins gitea api nexus vault
-DISTCLEAN_ORDER := jenkins api nexus gitlab gitea vault
+STOP_ORDER := chatbot ollama nginx jenkins api nexus gitlab gitea vault
+DEVOPS_ORDER := vault nexus api gitea jenkins nginx ollama chatbot
+DEVOPS_STOP_ORDER := chatbot ollama nginx jenkins gitea api nexus vault
+DISTCLEAN_ORDER := chatbot ollama nginx jenkins api nexus gitlab gitea vault
 
 .PHONY: help all up down start stop restart status \
 	devops devops-up devops-down devops-stop \
@@ -30,8 +30,8 @@ help:
 	@echo "  make down MODE=docker|bare     # stop all services in reverse order"
 	@echo "  make start MODE=docker|bare    # alias for up"
 	@echo "  make stop MODE=docker|bare     # alias for down"
-	@echo "  make devops MODE=docker|bare   # start vault,nexus,gitea,jenkins"
-	@echo "  make devops-down MODE=docker|bare # stop jenkins,gitea,nexus,vault"
+	@echo "  make devops MODE=docker|bare   # start vault,nexus,api,gitea,jenkins,nginx,ollama,chatbot"
+	@echo "  make devops-down MODE=docker|bare # stop chatbot,ollama,nginx,jenkins,gitea,api,nexus,vault"
 	@echo "  make distclean                 # remove generated deployment artifacts"
 	@echo "  make distclan                  # alias for distclean"
 	@echo "  make status                    # show status for all services"
@@ -41,7 +41,7 @@ help:
 	@echo "  make down-vault MODE=docker|bare"
 	@echo "  make status-vault MODE=docker|bare"
 	@echo "  make logs-vault MODE=docker|bare"
-	@echo "  # Same pattern for: gitea, gitlab, nexus, api, jenkins"
+	@echo "  # Same pattern for: gitea, gitlab, nexus, api, jenkins, nginx, ollama, chatbot"
 	@echo ""
 	@echo "Service start order: $(START_ORDER)"
 	@echo "Service stop order:  $(STOP_ORDER)"

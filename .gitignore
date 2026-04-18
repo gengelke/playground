@@ -86,6 +86,10 @@ nexus/.local/
 nexus/data/
 nexus/logs/
 nexus/run/
+nginx/.state/
+nginx/certs/
+nginx/runtime/
+ollama/data/
 vault/.vault/
 
 # =========================

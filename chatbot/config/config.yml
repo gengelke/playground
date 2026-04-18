@@ -1,0 +1,133 @@
+server:
+  host: 0.0.0.0
+  port: 8088
+
+providers:
+  default_provider: local
+  default_model: llama3.1
+
+  local:
+    enabled: true
+    default_model: llama3.1
+    # Ollama chat endpoint by default. An OpenAI-compatible local endpoint that
+    # ends in /chat/completions also works.
+    base_url: ${LOCAL_LLM_URL:-http://localhost:11434/api/chat}
+    timeout_seconds: 180
+
+  openai:
+    default_model: gpt-4.1-mini
+    api_key_env: OPENAI_API_KEY
+    base_url: https://api.openai.com/v1/chat/completions
+    timeout_seconds: 60
+
+  anthropic:
+    api_key_env: ANTHROPIC_API_KEY
+    base_url: https://api.anthropic.com/v1/messages
+    api_version: "2023-06-01"
+    max_tokens: 800
+    timeout_seconds: 60
+
+rules:
+  exact:
+    - question: "How are you?"
+      answer: "I'm fine"
+    - question: "hello"
+      answer: "Hello. I am running locally."
+
+  patterns:
+    - pattern: "^help$"
+      answer: |
+        Try:
+        - How are you?
+        - local time
+        - list sample docs
+        - what does the playground note say about Jenkins?
+
+tools:
+  - name: local_time
+    match:
+      exact:
+        - local time
+        - what time is it locally?
+      patterns:
+        - "^run local time$"
+    command:
+      - python3
+      - -c
+      - "import datetime; print(datetime.datetime.now().isoformat(timespec='seconds'))"
+    timeout_seconds: 5
+
+  - name: list_sample_docs
+    match:
+      exact:
+        - list sample docs
+      patterns:
+        - "^show sample docs$"
+    command:
+      - python3
+      - -c
+      - "from pathlib import Path; print('\\n'.join(sorted(p.name for p in Path('sample_docs').glob('*'))))"
+    timeout_seconds: 5
+
+local_files:
+  - name: sample_docs
+    enabled: true
+    path: sample_docs
+    max_files: 10
+    max_chars: 1200
+    match:
+      patterns:
+        - "sample doc"
+        - "playground note"
+        - "jenkins"
+        - "gitea"
+        - "nexus"
+        - "vault"
+
+sqlite_sources:
+  - name: example_playground_sqlite
+    enabled: false
+    path: data/playground.sqlite
+    query: "SELECT name, value FROM facts WHERE name LIKE :like_query OR value LIKE :like_query LIMIT 5"
+    limit: 5
+    match:
+      patterns:
+        - "playground sqlite"
+        - "local database"
+
+rest_sources:
+  - name: example_company_api
+    enabled: false
+    url: ${COMPANY_API_URL:-http://localhost:8001/health}
+    method: GET
+    send_query_param: false
+    timeout_seconds: 3
+    match:
+      patterns:
+        - "company api"
+        - "employee service"
+
+documents:
+  sqlite_path: data/documents.sqlite
+  chunk_size: 900
+  chunk_overlap: 150
+  top_k: 4
+  min_query_chars: 4
+  min_query_tokens: 2
+  min_score: 0.25
+
+qdrant:
+  enabled: true
+  url: ${QDRANT_URL:-http://localhost:6333}
+  collection: chatbot_chunks
+  vector_size: 96
+  timeout_seconds: 3
+  min_query_chars: 4
+  min_query_tokens: 2
+  min_score: 0.2
+
+web_search:
+  enabled: false
+  provider: duckduckgo
+  url: https://api.duckduckgo.com/
+  timeout_seconds: 4

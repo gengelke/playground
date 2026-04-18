@@ -1,0 +1,40 @@
+services:
+  chatbot:
+    build: .
+    container_name: local-chatbot
+    ports:
+      - "${CHATBOT_PORT:-8088}:8088"
+    environment:
+      CHATBOT_CONFIG: /app/config/config.yml
+      QDRANT_URL: http://qdrant:6333
+      LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://playground-ollama:11434/api/chat}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      COMPANY_API_URL: ${COMPANY_API_URL:-http://host.docker.internal:8001/health}
+    volumes:
+      - ./config:/app/config:ro
+      - ./sample_docs:/app/sample_docs:ro
+      - chatbot-data:/app/data
+    depends_on:
+      - qdrant
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - playground-llm
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    container_name: local-chatbot-qdrant
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+
+volumes:
+  chatbot-data:
+  qdrant-data:
+
+networks:
+  playground-llm:
+    external: true

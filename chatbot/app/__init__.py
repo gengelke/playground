@@ -1,0 +1,2 @@
+"""Local-first chatbot package."""
+

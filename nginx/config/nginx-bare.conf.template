@@ -1,0 +1,38 @@
+worker_processes 1;
+pid @@PID_FILE@@;
+error_log @@ERROR_LOG@@ info;
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    default_type application/octet-stream;
+    access_log @@ACCESS_LOG@@;
+    sendfile on;
+
+    types {
+        text/html html;
+        text/css css;
+        image/jpeg jpg jpeg;
+        image/png png;
+        image/svg+xml svg;
+        application/javascript js;
+    }
+
+    server {
+        listen 127.0.0.1:@@HTTPS_PORT@@ ssl;
+        server_name localhost;
+
+        ssl_certificate @@CERT_FILE@@;
+        ssl_certificate_key @@KEY_FILE@@;
+        ssl_protocols TLSv1.2 TLSv1.3;
+
+        root @@WWW_DIR@@;
+        index index.html;
+
+        location / {
+            try_files $uri $uri/ =404;
+        }
+    }
+}

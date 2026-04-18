@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Local Chatbot</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #202124;
+        background: #f6f7f8;
+      }
+      body {
+        margin: 0;
+      }
+      main {
+        max-width: 920px;
+        margin: 0 auto;
+        padding: 28px 18px;
+      }
+      h1 {
+        font-size: 28px;
+        margin: 0 0 18px;
+      }
+      h2 {
+        margin-top: 28px;
+      }
+      label {
+        display: block;
+        font-weight: 650;
+        margin: 14px 0 6px;
+      }
+      textarea,
+      input,
+      select {
+        box-sizing: border-box;
+        width: 100%;
+        border: 1px solid #b9c0c7;
+        border-radius: 6px;
+        padding: 10px;
+        font: inherit;
+        background: #ffffff;
+      }
+      textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .checks {
+        display: flex;
+        gap: 18px;
+        flex-wrap: wrap;
+        margin: 14px 0;
+      }
+      .checks label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0;
+        font-weight: 500;
+      }
+      .checks input {
+        width: auto;
+      }
+      button {
+        border: 0;
+        border-radius: 6px;
+        background: #157347;
+        color: #ffffff;
+        padding: 10px 16px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: wait;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-break: break-word;
+        background: #ffffff;
+        border: 1px solid #d6dadd;
+        border-radius: 6px;
+        padding: 14px;
+      }
+      .meta {
+        color: #47515b;
+      }
+      .hint {
+        color: #5f6973;
+        margin: 6px 0 0;
+      }
+      .small-textarea {
+        min-height: 64px;
+      }
+      @media (max-width: 720px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Local Chatbot</h1>
+      <form id="chat-form">
+        <label for="message">Question or command</label>
+        <textarea id="message" required>How are you?</textarea>
+
+        <div class="row">
+          <div>
+            <label for="provider">Provider</label>
+            <select id="provider">
+              <option value="">Configured default</option>
+              <option value="local">local</option>
+              <option value="openai">openai</option>
+              <option value="anthropic">anthropic</option>
+            </select>
+          </div>
+          <div>
+            <label for="model">Model</label>
+            <input id="model" placeholder="optional">
+          </div>
+          <div>
+            <label for="mode">Mode</label>
+            <select id="mode">
+              <option value="normal">Normal</option>
+              <option value="force_llm">Force LLM</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="checks">
+          <label><input id="use-rag" type="checkbox" checked> Use RAG</label>
+          <label><input id="rag-only" type="checkbox"> RAG only</label>
+          <label><input id="use-web" type="checkbox"> Use web search</label>
+        </div>
+
+        <button id="send" type="submit">Send</button>
+      </form>
+
+      <h2>Answer</h2>
+      <pre id="answer">Waiting for a question.</pre>
+      <h2>Metadata</h2>
+      <pre id="metadata" class="meta">{}</pre>
+
+      <h2>Ingest Documents</h2>
+      <form id="ingest-form">
+        <label for="ingest-paths">Server paths</label>
+        <textarea id="ingest-paths" class="small-textarea" required>sample_docs</textarea>
+        <p class="hint">Use one path per line. Paths must be visible to the chatbot service.</p>
+        <div class="checks">
+          <label><input id="ingest-reset" type="checkbox"> Reset existing chunks first</label>
+        </div>
+        <button id="ingest-send" type="submit">Ingest</button>
+      </form>
+      <h2>Ingestion Result</h2>
+      <pre id="ingest-result" class="meta">{}</pre>
+    </main>
+
+    <script>
+      const form = document.getElementById("chat-form");
+      const send = document.getElementById("send");
+      const answer = document.getElementById("answer");
+      const metadata = document.getElementById("metadata");
+      const useRag = document.getElementById("use-rag");
+      const ragOnly = document.getElementById("rag-only");
+      const ingestForm = document.getElementById("ingest-form");
+      const ingestSend = document.getElementById("ingest-send");
+      const ingestResult = document.getElementById("ingest-result");
+
+      ragOnly.addEventListener("change", () => {
+        if (ragOnly.checked) {
+          useRag.checked = true;
+        }
+      });
+
+      useRag.addEventListener("change", () => {
+        if (!useRag.checked) {
+          ragOnly.checked = false;
+        }
+      });
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        send.disabled = true;
+        answer.textContent = "Working...";
+        metadata.textContent = "{}";
+
+        const body = {
+          message: document.getElementById("message").value,
+          provider: document.getElementById("provider").value || null,
+          model: document.getElementById("model").value || null,
+          use_rag: useRag.checked,
+          rag_only: ragOnly.checked,
+          use_web_search: document.getElementById("use-web").checked,
+          force_llm: document.getElementById("mode").value === "force_llm"
+        };
+
+        try {
+          const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify(body)
+          });
+          const data = await response.json();
+          answer.textContent = data.answer || "";
+          metadata.textContent = JSON.stringify({
+            source: data.source,
+            provider: data.provider,
+            model: data.model,
+            tool: data.tool,
+            metadata: data.metadata
+          }, null, 2);
+        } catch (error) {
+          answer.textContent = String(error);
+        } finally {
+          send.disabled = false;
+        }
+      });
+
+      ingestForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        ingestSend.disabled = true;
+        ingestResult.textContent = "Ingesting...";
+
+        const paths = document.getElementById("ingest-paths").value
+          .split(/\r?\n/)
+          .map((path) => path.trim())
+          .filter(Boolean);
+
+        try {
+          const response = await fetch("/api/ingest", {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+              paths,
+              reset: document.getElementById("ingest-reset").checked
+            })
+          });
+          const data = await response.json();
+          ingestResult.textContent = JSON.stringify(data, null, 2);
+        } catch (error) {
+          ingestResult.textContent = String(error);
+        } finally {
+          ingestSend.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>
