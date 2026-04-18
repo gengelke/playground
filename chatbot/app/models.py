@@ -11,6 +11,7 @@ class ChatRequest:
     model: str | None = None
     use_rag: bool = True
     rag_only: bool = False
+    use_local_files: bool = False
     use_web_search: bool | None = None
     force_llm: bool = False
 

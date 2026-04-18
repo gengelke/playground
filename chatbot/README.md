@@ -145,7 +145,7 @@ curl -s http://localhost:8088/api/chat \
   -d '{"message":"How are you?"}' | jq
 ```
 
-With RAG and provider override:
+With strict RAG and provider override:
 
 ```bash
 curl -s http://localhost:8088/api/chat \
@@ -159,20 +159,25 @@ curl -s http://localhost:8088/api/chat \
   }' | jq
 ```
 
-For local-document-only retrieval with no LLM fallback, use `rag_only`:
+With `use_rag`, the chatbot retrieves RAG context from SQLite/Qdrant. If context
+is found, the selected LLM answers using only that retrieved context. If no
+relevant context is found, the response source is `rag_empty` and no LLM provider
+is called. The older `rag_only` request field is still accepted for compatibility
+and has the same strict-RAG behavior.
+
+For local-file-only answers, use `use_local_files` and do not set `use_rag`:
 
 ```bash
 curl -s http://localhost:8088/api/chat \
   -H 'Content-Type: application/json' \
   -d '{
-    "message": "popel",
-    "use_rag": true,
-    "rag_only": true
+    "message": "faq services",
+    "use_rag": false,
+    "use_local_files": true
   }' | jq
 ```
 
-If no relevant chunks are found, the response source is `rag_empty` and no LLM
-provider is called.
+`use_rag` and `use_local_files` are mutually exclusive.
 
 ## Ingestion Flow
 
@@ -183,12 +188,20 @@ ingestion works without OpenAI, Anthropic, or a local LLM.
 SQLite and Qdrant retrieval have simple relevance gates in `config/config.yml`:
 `min_query_chars`, `min_query_tokens`, and `min_score`. This prevents very short
 or unrelated questions from always returning stored chunks. The `use_rag` flag
-controls whether document chunks are added to LLM context.
+controls whether document chunks are added to LLM context. Raw chunks are only
+returned as a fallback if the selected LLM is unavailable.
 
 ```bash
 python -m app.cli ingest sample_docs --reset
 python -m app.cli ask "Jenkins REST API playground note"
 ```
+
+The sample documents include `sample_docs/playground-faq.md`, a detailed FAQ
+generated from the top-level playground README. It explains the playground,
+service roles, orchestration commands, per-service commands, central port
+configuration, chatbot usage, and how the services relate to each other. It can
+be used as a configured local file or ingested into SQLite/Qdrant RAG with the
+same `sample_docs` command.
 
 The API also exposes ingestion:
 
@@ -200,7 +213,9 @@ curl -s http://localhost:8088/api/ingest \
 
 The web UI at `http://localhost:8088/` also has an ingestion form. Enter one
 server-visible path per line, for example `sample_docs`. In Docker mode, paths
-must exist inside the chatbot container or be mounted into it.
+must exist inside the chatbot container or be mounted into it. The same form can
+also upload files selected in the browser. Uploaded files are stored under
+`data/uploads` inside the chatbot service and then ingested into SQLite/Qdrant.
 
 Supported document inputs are text-like files (`.txt`, `.md`, `.json`, `.yaml`,
 `.csv`, `.html`, logs) and simple `.epub` text extraction. PDFs are not parsed in
@@ -256,8 +271,8 @@ The chatbot Makefile also starts:
 - `ollama`
 
 The chatbot remains useful if Qdrant or a local LLM is not available: exact rules,
-pattern rules, whitelisted tools, local files, configured SQLite sources, and
-SQLite chunk retrieval still work.
+pattern rules, whitelisted tools, configured local-file mode, configured SQLite
+sources, and SQLite chunk retrieval still work.
 
 ## Optional Local LLM
 
@@ -302,14 +317,20 @@ You can also point `providers.local.base_url` at an OpenAI-compatible local
 
 ## OpenAI and Anthropic
 
-Set keys only when you want to use those providers:
+OpenAI is the default provider in `config/config.yml`, so set an OpenAI key for
+normal LLM-backed answers:
 
 ```bash
 export OPENAI_API_KEY=...
+```
+
+Set an Anthropic key only when you want to use that provider:
+
+```bash
 export ANTHROPIC_API_KEY=...
 ```
 
-Then select a provider per request or change the default in config:
+You can still select a provider per request or change the default in config:
 
 ```yaml
 providers:

@@ -4,5 +4,5 @@ pydantic==2.10.4
 PyYAML==6.0.2
 requests==2.32.3
 qdrant-client==1.12.1
+python-multipart==0.0.20
 pytest==8.3.4
-

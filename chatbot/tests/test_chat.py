@@ -6,7 +6,7 @@ from pathlib import Path
 from app.chat import ChatService
 from app.ingest import ingest_paths
 from app.llm import selected_provider_model
-from app.models import ChatRequest
+from app.models import ChatRequest, LLMResult
 from app.retrieval import search_qdrant
 
 
@@ -70,7 +70,7 @@ def test_configured_tool_is_whitelisted(tmp_path: Path) -> None:
     assert response.tool == "echo_safe"
 
 
-def test_sqlite_document_chunks_are_used_before_llm(tmp_path: Path) -> None:
+def test_sqlite_document_chunks_are_sent_to_llm_context(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -79,10 +79,19 @@ def test_sqlite_document_chunks_are_used_before_llm(tmp_path: Path) -> None:
     result = ingest_paths(config, ["docs"], reset=True)
     assert result["ingested"][0]["chunks"] == 1
 
+    captured = {}
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        captured["context"] = context
+        return LLMResult("Jenkins job status can be read from its REST API.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
     service = ChatService(config)
     response = service.answer(ChatRequest(message="Jenkins REST status"))
-    assert response.source == "sqlite_chunks"
+    assert response.source == "llm"
     assert "Jenkins job status" in response.answer
+    assert captured["context"][0]["source"] == "sqlite:docs/note.txt"
 
 
 def test_ingestion_skips_editor_files(tmp_path: Path) -> None:
@@ -101,7 +110,7 @@ def test_ingestion_skips_editor_files(tmp_path: Path) -> None:
     assert skipped_paths == {".note.md.swp", ".note.md.un~"}
 
 
-def test_direct_question_gets_extracted_answer_from_chunks(tmp_path: Path) -> None:
+def test_direct_question_gets_answer_from_llm_with_rag_context(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -112,43 +121,48 @@ def test_direct_question_gets_extracted_answer_from_chunks(tmp_path: Path) -> No
     )
     ingest_paths(config, ["docs"], reset=True)
 
+    captured = {}
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        captured["message"] = message
+        captured["context"] = context
+        return LLMResult("Gordon Engelke is the author and maintainer of the DevOps Playground.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
     service = ChatService(config)
     response = service.answer(ChatRequest(message="Who is Gordon Engelke?", use_rag=True))
 
-    assert response.source == "sqlite_chunks"
+    assert response.source == "llm"
     assert response.answer == "Gordon Engelke is the author and maintainer of the DevOps Playground."
-    assert response.metadata["answer_mode"] == "extractive"
-
-    short_response = service.answer(ChatRequest(message="Who is Gordon?", use_rag=True))
-
-    assert short_response.answer == "Gordon Engelke is the author and maintainer of the DevOps Playground."
-
-    yes_no_response = service.answer(ChatRequest(message="Is Gordon Engelke an author?", use_rag=True))
-
-    assert yes_no_response.answer == "Yes. Gordon Engelke is the author and maintainer of the DevOps Playground."
+    assert captured["message"] == "Who is Gordon Engelke?"
+    assert "Gordon Engelke is the author" in captured["context"][0]["text"]
 
 
-def test_yes_no_question_prefers_complete_chunk_answer(tmp_path: Path) -> None:
+def test_relation_question_is_handled_by_llm_with_rag_context(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
     (docs / "note.md").write_text(
-        "# DevOps Playground Notes\n\n"
-        "This chatbot is intended to run as an optional service in the DevOps playground. "
-        "It can run by itself with SQLite storage and optional Qdrant semantic retrieval. "
-        "The playground commonly includes Jenkins, Gitea, Nexus, Vault, Nginx, GitLab, and "
-        "small API services. The chatbot should connect to those services through configuration, "
-        "not through hardcoded service names.\n\n"
-        "# The Author of DevOps Playground\n\n"
-        "Gordon Engelke is the author and maintainer of the DevOps Playground\n",
+        "Gordon Engelke is the author and maintainer of the DevOps Playground",
         encoding="utf-8",
     )
     ingest_paths(config, ["docs"], reset=True)
 
-    service = ChatService(config)
-    response = service.answer(ChatRequest(message="Is Gordon Engelke an author?", use_rag=True))
+    captured = {}
 
-    assert response.answer == "Yes. Gordon Engelke is the author and maintainer of the DevOps Playground."
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        captured["context"] = context
+        return LLMResult("I don't know from the RAG context.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Does Gordon Engelke know a popel?", use_rag=True))
+
+    assert response.source == "llm"
+    assert response.answer == "I don't know from the RAG context."
+    assert "Gordon Engelke is the author" in captured["context"][0]["text"]
 
 
 def test_provider_specific_default_model_wins_for_provider_override(tmp_path: Path) -> None:
@@ -195,7 +209,90 @@ def test_rag_only_returns_empty_instead_of_llm_for_no_match(tmp_path: Path) -> N
     assert response.metadata["context"] == []
 
 
-def test_rag_only_returns_chunks_when_retrieval_matches(tmp_path: Path) -> None:
+def test_rag_only_calls_llm_when_retrieval_matches(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.txt").write_text("Jenkins job status can be read from its REST API.", encoding="utf-8")
+    ingest_paths(config, ["docs"], reset=True)
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        return LLMResult("Jenkins job status can be read from its REST API.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True, rag_only=True, force_llm=True))
+
+    assert response.source == "llm"
+    assert "Jenkins job status" in response.answer
+
+
+def test_rag_only_skips_configured_local_file_source(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.md").write_text("Jenkins is mentioned in the playground document.", encoding="utf-8")
+    config["local_files"] = [
+        {
+            "name": "docs",
+            "enabled": True,
+            "path": "docs",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["jenkins", "playground"]},
+        }
+    ]
+    ingest_paths(config, ["docs"], reset=True)
+
+    captured = {}
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        captured["context"] = context
+        return LLMResult("Jenkins is mentioned in the playground document.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Does Gordon have Jenkins in playground?", use_rag=True, rag_only=True))
+
+    assert response.source == "llm"
+    assert response.answer == "Jenkins is mentioned in the playground document."
+    assert captured["context"][0]["source"] == "sqlite:docs/note.md"
+
+
+def test_local_files_mode_uses_only_configured_local_files(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "faq.md").write_text("The playground includes Jenkins and Ollama.", encoding="utf-8")
+    config["local_files"] = [
+        {
+            "name": "docs",
+            "enabled": True,
+            "path": "docs",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["jenkins", "playground"]},
+        }
+    ]
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Which playground services mention Jenkins?", use_rag=False, use_local_files=True))
+
+    assert response.source == "local_file"
+    assert "The playground includes Jenkins and Ollama." in response.answer
+
+
+def test_local_files_and_rag_are_mutually_exclusive(tmp_path: Path) -> None:
+    service = ChatService(base_config(tmp_path))
+    response = service.answer(ChatRequest(message="Jenkins", use_rag=True, use_local_files=True))
+
+    assert response.source == "validation"
+    assert response.answer == "Choose either RAG or local files, not both."
+
+
+def test_rag_context_is_returned_if_llm_fails(tmp_path: Path) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -203,7 +300,7 @@ def test_rag_only_returns_chunks_when_retrieval_matches(tmp_path: Path) -> None:
     ingest_paths(config, ["docs"], reset=True)
 
     service = ChatService(config)
-    response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True, rag_only=True, force_llm=True))
+    response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True))
 
-    assert response.source == "sqlite_chunks"
+    assert response.source == "rag_context"
     assert "Jenkins job status" in response.answer

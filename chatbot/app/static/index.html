@@ -111,6 +111,7 @@
       <form id="chat-form">
         <label for="message">Question or command</label>
         <textarea id="message" required>How are you?</textarea>
+        <p class="hint">Press Enter to send. Press Shift+Enter for a new line.</p>
 
         <div class="row">
           <div>
@@ -137,7 +138,7 @@
 
         <div class="checks">
           <label><input id="use-rag" type="checkbox" checked> Use RAG</label>
-          <label><input id="rag-only" type="checkbox"> RAG only</label>
+          <label><input id="use-local-files" type="checkbox"> Use local files</label>
           <label><input id="use-web" type="checkbox"> Use web search</label>
         </div>
 
@@ -152,8 +153,11 @@
       <h2>Ingest Documents</h2>
       <form id="ingest-form">
         <label for="ingest-paths">Server paths</label>
-        <textarea id="ingest-paths" class="small-textarea" required>sample_docs</textarea>
+        <textarea id="ingest-paths" class="small-textarea">sample_docs</textarea>
         <p class="hint">Use one path per line. Paths must be visible to the chatbot service.</p>
+        <label for="ingest-files">Browser files</label>
+        <input id="ingest-files" type="file" multiple>
+        <p class="hint">Choose files from this browser. Uploaded files are stored under <code>data/uploads</code> and ingested.</p>
         <div class="checks">
           <label><input id="ingest-reset" type="checkbox"> Reset existing chunks first</label>
         </div>
@@ -165,24 +169,33 @@
 
     <script>
       const form = document.getElementById("chat-form");
+      const message = document.getElementById("message");
       const send = document.getElementById("send");
       const answer = document.getElementById("answer");
       const metadata = document.getElementById("metadata");
       const useRag = document.getElementById("use-rag");
-      const ragOnly = document.getElementById("rag-only");
+      const useLocalFiles = document.getElementById("use-local-files");
       const ingestForm = document.getElementById("ingest-form");
       const ingestSend = document.getElementById("ingest-send");
       const ingestResult = document.getElementById("ingest-result");
+      const ingestFiles = document.getElementById("ingest-files");
 
-      ragOnly.addEventListener("change", () => {
-        if (ragOnly.checked) {
-          useRag.checked = true;
+      useRag.addEventListener("change", () => {
+        if (useRag.checked) {
+          useLocalFiles.checked = false;
         }
       });
 
-      useRag.addEventListener("change", () => {
-        if (!useRag.checked) {
-          ragOnly.checked = false;
+      useLocalFiles.addEventListener("change", () => {
+        if (useLocalFiles.checked) {
+          useRag.checked = false;
+        }
+      });
+
+      message.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" && !event.shiftKey) {
+          event.preventDefault();
+          form.requestSubmit();
         }
       });
 
@@ -193,11 +206,12 @@
         metadata.textContent = "{}";
 
         const body = {
-          message: document.getElementById("message").value,
+          message: message.value,
           provider: document.getElementById("provider").value || null,
           model: document.getElementById("model").value || null,
           use_rag: useRag.checked,
-          rag_only: ragOnly.checked,
+          rag_only: useRag.checked,
+          use_local_files: useLocalFiles.checked,
           use_web_search: document.getElementById("use-web").checked,
           force_llm: document.getElementById("mode").value === "force_llm"
         };
@@ -233,18 +247,39 @@
           .split(/\r?\n/)
           .map((path) => path.trim())
           .filter(Boolean);
+        const reset = document.getElementById("ingest-reset").checked;
+        const files = Array.from(ingestFiles.files || []);
 
         try {
-          const response = await fetch("/api/ingest", {
-            method: "POST",
-            headers: {"Content-Type": "application/json"},
-            body: JSON.stringify({
-              paths,
-              reset: document.getElementById("ingest-reset").checked
-            })
-          });
-          const data = await response.json();
-          ingestResult.textContent = JSON.stringify(data, null, 2);
+          const results = [];
+
+          if (paths.length > 0) {
+            const response = await fetch("/api/ingest", {
+              method: "POST",
+              headers: {"Content-Type": "application/json"},
+              body: JSON.stringify({paths, reset})
+            });
+            results.push({server_paths: await response.json()});
+          }
+
+          if (files.length > 0) {
+            const formData = new FormData();
+            for (const file of files) {
+              formData.append("files", file);
+            }
+            formData.append("reset", paths.length > 0 ? "false" : String(reset));
+            const response = await fetch("/api/ingest/files", {
+              method: "POST",
+              body: formData
+            });
+            results.push({browser_files: await response.json()});
+          }
+
+          if (results.length === 0) {
+            results.push({error: "Enter at least one server path or choose at least one browser file."});
+          }
+
+          ingestResult.textContent = JSON.stringify(results.length === 1 ? results[0] : results, null, 2);
         } catch (error) {
           ingestResult.textContent = String(error);
         } finally {

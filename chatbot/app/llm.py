@@ -51,9 +51,10 @@ def build_prompt(message: str, context: list[dict[str, str]]) -> str:
 
     context_text = "\n\n".join(f"[{item.get('source', 'context')}]\n{item.get('text', '')}" for item in context)
     return (
-        "Answer the user using the local context when it is relevant. "
-        "If the context is insufficient, say what is missing.\n\n"
-        f"Local context:\n{context_text}\n\n"
+        "Answer the user using only the RAG context below. "
+        "If the RAG context does not contain the answer, say that you do not know from the RAG context. "
+        "Keep the answer concise.\n\n"
+        f"RAG context:\n{context_text}\n\n"
         f"User question:\n{message}"
     )
 

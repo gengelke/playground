@@ -20,6 +20,7 @@ def main() -> None:
     ask.add_argument("--model", default=None)
     ask.add_argument("--no-rag", action="store_true")
     ask.add_argument("--rag-only", action="store_true")
+    ask.add_argument("--local-files", action="store_true", help="Use configured local file sources only.")
     ask.add_argument("--web-search", action="store_true")
     ask.add_argument("--force-llm", action="store_true")
     ask.add_argument("--json", action="store_true")
@@ -29,6 +30,7 @@ def main() -> None:
     shell.add_argument("--model", default=None)
     shell.add_argument("--no-rag", action="store_true")
     shell.add_argument("--rag-only", action="store_true")
+    shell.add_argument("--local-files", action="store_true", help="Use configured local file sources only.")
     shell.add_argument("--web-search", action="store_true")
 
     ingest = subparsers.add_parser("ingest", help="Ingest documents into SQLite and optional Qdrant.")
@@ -50,8 +52,9 @@ def main() -> None:
                 message=args.message,
                 provider=args.provider,
                 model=args.model,
-                use_rag=not args.no_rag,
+                use_rag=(not args.no_rag or args.rag_only) and not args.local_files,
                 rag_only=args.rag_only,
+                use_local_files=args.local_files,
                 use_web_search=args.web_search,
                 force_llm=args.force_llm,
             )
@@ -77,8 +80,9 @@ def main() -> None:
                 message=message,
                 provider=args.provider,
                 model=args.model,
-                use_rag=not args.no_rag,
+                use_rag=(not args.no_rag or args.rag_only) and not args.local_files,
                 rag_only=args.rag_only,
+                use_local_files=args.local_files,
                 use_web_search=args.web_search,
             )
         )
