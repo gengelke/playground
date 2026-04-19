@@ -21,6 +21,19 @@ def test_chat_endpoint_exact_rule() -> None:
     assert data["source"] == "rule_exact"
 
 
+def test_history_endpoint_records_chat() -> None:
+    client = TestClient(app)
+    client.delete("/api/history")
+    response = client.post("/api/chat", json={"message": "How are you?"})
+    assert response.status_code == 200
+
+    history = client.get("/api/history?limit=5")
+    assert history.status_code == 200
+    data = history.json()
+    assert data["items"][0]["message"] == "How are you?"
+    assert data["items"][0]["answer"] == "I'm fine"
+
+
 def test_retrieval_profiles_endpoint() -> None:
     client = TestClient(app)
     response = client.get("/api/retrieval-profiles")
@@ -30,7 +43,7 @@ def test_retrieval_profiles_endpoint() -> None:
     names = {profile["name"] for profile in data["profiles"]}
     assert "sqlite" in names
     assert "qdrant_local_hash" in names
-    assert "qdrant_anthropic_voyage" in names
+    assert "qdrant_anthropic_openai" in names
 
 
 def test_chat_compare_endpoint() -> None:

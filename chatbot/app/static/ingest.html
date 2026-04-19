@@ -34,7 +34,10 @@
 
         <form id="ingest-form" class="ingest-layout">
           <section class="console-surface composer">
-            <label for="ingest-paths">Server paths</label>
+            <div class="field-heading">
+              <label for="ingest-paths">Server paths</label>
+              <button class="copy-action" type="button" data-copy-target="ingest-paths">Copy</button>
+            </div>
             <textarea id="ingest-paths" class="small-textarea">sample_docs</textarea>
             <p class="hint">Use one path per line. Paths must be visible to the chatbot service.</p>
 
@@ -64,11 +67,12 @@
           <div>
             <h2>Result</h2>
           </div>
+          <button class="copy-action" type="button" data-copy-target="ingest-result">Copy</button>
         </div>
         <pre id="ingest-result" class="terminal-display meta-display">{}</pre>
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=history-5"></script>
   </body>
 </html>

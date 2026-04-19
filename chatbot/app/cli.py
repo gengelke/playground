@@ -5,6 +5,7 @@ import json
 
 from app.chat import ChatService
 from app.config import load_config
+from app.history import clear_history, delete_history_item, get_history_item, list_history
 from app.ingest import ingest_paths
 from app.models import ChatRequest
 
@@ -47,12 +48,35 @@ def main() -> None:
     compare.add_argument("--model", default=None)
     compare.add_argument("--force-llm", action="store_true")
 
+    history = subparsers.add_parser("history", help="Show or clear question history.")
+    history_actions = history.add_subparsers(dest="history_command")
+    history_list = history_actions.add_parser("list", help="List recent questions.")
+    history_list.add_argument("--limit", type=int, default=50)
+    history_show = history_actions.add_parser("show", help="Show one history item.")
+    history_show.add_argument("id", type=int)
+    history_delete = history_actions.add_parser("delete", help="Delete one history item.")
+    history_delete.add_argument("id", type=int)
+    history_actions.add_parser("clear", help="Clear all history.")
+
     args = parser.parse_args()
     config = load_config(args.config)
 
     if args.command == "ingest":
         result = ingest_paths(config, args.paths, reset=args.reset, profiles=split_profiles(args.profiles))
         print(json.dumps(result, indent=2, ensure_ascii=False))
+        return
+
+    if args.command == "history":
+        command = args.history_command or "list"
+        if command == "list":
+            for item in list_history(config, limit=args.limit):
+                print(f"{item['id']}  {item['created_at_iso']}  {item['source']}  {item['message']}")
+        elif command == "show":
+            print(json.dumps(get_history_item(config, args.id), indent=2, ensure_ascii=False))
+        elif command == "delete":
+            print(json.dumps({"deleted": delete_history_item(config, args.id)}, indent=2, ensure_ascii=False))
+        elif command == "clear":
+            print(json.dumps({"deleted": clear_history(config)}, indent=2, ensure_ascii=False))
         return
 
     service = ChatService(config)

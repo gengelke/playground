@@ -8,12 +8,20 @@ PORTS_FILE ?= $(ROOT_DIR)/ports.env
 include $(ROOT_DIR)/scripts/lib/common.mk
 
 MODE ?= docker
-PYTHON ?= python3.12
+PYTHON ?= $(shell for candidate in python3.12 python3.11 python3.10 python3; do \
+	if command -v "$$candidate" >/dev/null 2>&1; then \
+		echo "$$candidate"; \
+		break; \
+	fi; \
+done)
 CHATBOT_HOST ?= 0.0.0.0
 CHATBOT_PORT ?= 8088
 CHATBOT_URL ?= http://127.0.0.1:$(CHATBOT_PORT)
 CHATBOT_CONFIG ?= $(MAKEFILE_DIR)config/config.yml
-LOCAL_LLM_URL ?= http://localhost:11434/api/chat
+OLLAMA_PORT ?= 11435
+OLLAMA_URL ?= http://127.0.0.1:$(OLLAMA_PORT)
+LOCAL_LLM_URL ?= $(OLLAMA_URL)/api/chat
+OLLAMA_EMBED_URL ?= $(OLLAMA_URL)/api/embed
 OLLAMA_DIR ?= $(ROOT_DIR)/ollama
 OLLAMA_MODE ?= docker
 OLLAMA_MODEL ?= llama3.1
@@ -29,6 +37,14 @@ UVICORN := $(VENV_DIR)/bin/uvicorn
 PYTEST := $(VENV_DIR)/bin/pytest
 DEPS_STAMP := $(VENV_DIR)/.deps-installed
 UVICORN_MATCH := $(UVICORN) app.main:app --host $(CHATBOT_HOST) --port $(CHATBOT_PORT)
+SANITIZE_TLS_ENV = \
+	for cert_var in SSL_CERT_FILE REQUESTS_CA_BUNDLE CURL_CA_BUNDLE PIP_CERT; do \
+		cert_path="$${!cert_var:-}"; \
+		if [[ -n "$$cert_path" && ! -f "$$cert_path" ]]; then \
+			echo "Ignoring invalid $$cert_var=$$cert_path" >&2; \
+			unset "$$cert_var"; \
+		fi; \
+	done;
 
 RUNTIME_DIR ?= $(MAKEFILE_DIR)runtime
 BARE_STATE_DIR ?= $(RUNTIME_DIR)/bare
@@ -41,14 +57,21 @@ LOG_FILE ?= $(BARE_STATE_DIR)/chatbot.log
 	bare-build bare-up bare-down bare-logs bare-status
 
 venv:
+	@if [[ -z "$(PYTHON)" ]]; then \
+		echo "No supported Python interpreter found. Install python3.10+ or run make with PYTHON=/path/to/python3.10+"; \
+		exit 1; \
+	fi
+	@"$(PYTHON)" -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 10) else "Python 3.10+ is required")'
 	@if [[ ! -x "$(VENV_PIP)" ]]; then \
 		rm -rf "$(VENV_DIR)"; \
 		"$(PYTHON)" -m venv "$(VENV_DIR)"; \
 	fi
 
 $(DEPS_STAMP): requirements.txt | venv
-	@"$(VENV_PIP)" install --upgrade pip
-	@"$(VENV_PIP)" install -r requirements.txt
+	@$(SANITIZE_TLS_ENV) \
+		PIP_DISABLE_PIP_VERSION_CHECK=1 "$(VENV_PYTHON)" -m pip install --upgrade pip
+	@$(SANITIZE_TLS_ENV) \
+		PIP_DISABLE_PIP_VERSION_CHECK=1 "$(VENV_PYTHON)" -m pip install -r requirements.txt
 	@touch "$(DEPS_STAMP)"
 
 deps: $(DEPS_STAMP)
@@ -84,7 +107,7 @@ status: check-mode
 	@$(MAKE) $(MODE)-status MODE="$(MODE)"
 
 run: deps ensure-ollama
-	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" \
+	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" \
 		"$(UVICORN)" app.main:app --host "$(CHATBOT_HOST)" --port "$(CHATBOT_PORT)"
 
 test: deps
@@ -95,7 +118,7 @@ ingest: deps
 		echo "Usage: make ingest PATHS='sample_docs [more paths]' [PROFILES='sqlite,qdrant_local_hash']"; \
 		exit 1; \
 	fi
-	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" \
+	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" \
 		"$(VENV_PYTHON)" -m app.cli ingest $(PATHS) $(if $(PROFILES),--profiles "$(PROFILES)",)
 
 docker-build:
@@ -103,7 +126,7 @@ docker-build:
 
 docker-up:
 	@$(MAKE) ensure-ollama
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" $(DOCKER_COMPOSE) up --build -d
+	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build -d
 	@for _ in $$(seq 1 30); do \
 		if curl -fsS "$(CHATBOT_URL)/health" >/dev/null 2>&1; then \
 			echo "Chatbot is ready at $(CHATBOT_URL)"; \
@@ -117,17 +140,17 @@ docker-up:
 
 docker-run:
 	@$(MAKE) ensure-ollama
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" $(DOCKER_COMPOSE) up --build
+	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build
 
 docker-down:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" $(DOCKER_COMPOSE) down
+	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) down
 	@$(MAKE) stop-ollama
 
 docker-logs:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" $(DOCKER_COMPOSE) logs -f --tail=100 chatbot qdrant
+	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) logs -f --tail=100 chatbot qdrant
 
 docker-status:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" $(DOCKER_COMPOSE) ps
+	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) ps
 
 bare-build: deps
 
@@ -147,6 +170,7 @@ bare-up: bare-build
 		exit 0; \
 	fi
 	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" \
+		OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" \
 		nohup "$(UVICORN)" app.main:app --host "$(CHATBOT_HOST)" --port "$(CHATBOT_PORT)" \
 		>"$(LOG_FILE)" 2>&1 & echo $$! >"$(PID_FILE)"
 	@for _ in $$(seq 1 30); do \
@@ -235,7 +259,9 @@ help:
 		"  CHATBOT_PORT=$(CHATBOT_PORT)" \
 		"  CHATBOT_URL=$(CHATBOT_URL)" \
 		"  CHATBOT_CONFIG=$(CHATBOT_CONFIG)" \
+		"  OLLAMA_URL=$(OLLAMA_URL)" \
 		"  LOCAL_LLM_URL=$(LOCAL_LLM_URL)" \
+		"  OLLAMA_EMBED_URL=$(OLLAMA_EMBED_URL)" \
 		"  CHATBOT_START_OLLAMA=$(CHATBOT_START_OLLAMA)" \
 		"  OLLAMA_MODEL=$(OLLAMA_MODEL)" \
 		"  OLLAMA_EMBED_MODEL=$(OLLAMA_EMBED_MODEL)" \

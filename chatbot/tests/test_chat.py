@@ -5,6 +5,7 @@ from pathlib import Path
 
 import app.ingest as ingest_module
 from app.chat import ChatService
+from app.history import clear_history, list_history
 from app.ingest import ingest_paths
 from app.llm import selected_provider_model
 from app.models import ChatRequest, LLMResult
@@ -30,6 +31,13 @@ def base_config(tmp_path: Path) -> dict:
                 "match": {"exact": ["safe echo"]},
                 "command": [sys.executable, "-c", "print('safe output')"],
                 "timeout_seconds": 3,
+            },
+            {
+                "name": "echo_body",
+                "usage": "echo body <value>",
+                "match": {"patterns": ["^echo body\\s+.+$"]},
+                "command": [sys.executable, "-c", "import sys; print(sys.argv[1])", "{tool_message}"],
+                "timeout_seconds": 3,
             }
         ],
         "local_files": [],
@@ -44,6 +52,11 @@ def base_config(tmp_path: Path) -> dict:
             "min_query_tokens": 2,
             "min_score": 0.25,
         },
+        "history": {
+            "enabled": True,
+            "sqlite_path": "data/history.sqlite",
+            "max_entries": 500,
+        },
         "qdrant": {"enabled": False},
         "web_search": {"enabled": False},
     }
@@ -55,6 +68,17 @@ def test_exact_rule_does_not_need_llm(tmp_path: Path) -> None:
     assert response.answer == "I'm fine"
     assert response.source == "rule_exact"
     assert response.provider is None
+
+
+def test_answer_is_recorded_in_history(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="How are you?"))
+    items = list_history(config)
+    assert response.metadata["history_id"] == items[0]["id"]
+    assert items[0]["message"] == "How are you?"
+    assert items[0]["answer"] == "I'm fine"
+    assert clear_history(config) == 1
 
 
 def test_pattern_rule(tmp_path: Path) -> None:
@@ -78,13 +102,22 @@ def test_configured_tool_requires_simon_says_prefix(tmp_path: Path) -> None:
     assert response.source != "tool"
 
 
+def test_configured_tool_can_receive_message_body(tmp_path: Path) -> None:
+    service = ChatService(base_config(tmp_path))
+    response = service.answer(ChatRequest(message="Simon says echo body Erika Mustermann Developer"))
+    assert response.answer == "echo body Erika Mustermann Developer"
+    assert response.source == "tool"
+    assert response.tool == "echo_body"
+
+
 def test_show_commands_lists_simon_says_commands(tmp_path: Path) -> None:
     service = ChatService(base_config(tmp_path))
     response = service.answer(ChatRequest(message="show commands"))
     assert response.source == "rule_exact"
     assert "Available commands:" in response.answer
     assert "- Simon says safe echo" in response.answer
-    assert response.metadata["commands"] == ["safe echo"]
+    assert "- Simon says echo body <value>" in response.answer
+    assert response.metadata["commands"] == ["safe echo", "echo body <value>"]
 
 
 def test_sqlite_document_chunks_are_sent_to_llm_context(tmp_path: Path, monkeypatch) -> None:
@@ -132,9 +165,9 @@ def test_concrete_ingest_profiles_expands_hybrid(tmp_path: Path) -> None:
     assert [profile["name"] for profile in profiles] == ["qdrant_local_hash", "sqlite"]
 
 
-def test_voyage_embedding_uses_api_key_and_input_type(tmp_path: Path, monkeypatch) -> None:
+def test_openai_embedding_uses_api_key(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
-    monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     captured = {}
 
     class FakeResponse:
@@ -156,20 +189,18 @@ def test_voyage_embedding_uses_api_key_and_input_type(tmp_path: Path, monkeypatc
     vector, metadata = embed_text(
         config,
         {
-            "provider": "voyage",
-            "model": "voyage-3.5",
-            "base_url": "https://api.voyageai.com/v1/embeddings",
-            "api_key_env": "VOYAGE_API_KEY",
+            "provider": "openai",
+            "model": "text-embedding-3-small",
+            "base_url": "https://api.openai.com/v1/embeddings",
+            "api_key_env": "OPENAI_API_KEY",
         },
         "Jenkins playground note",
-        input_type="query",
     )
 
     assert vector == [0.1, 0.2, 0.3]
     assert captured["headers"]["Authorization"] == "Bearer test-key"
-    assert captured["json"]["input_type"] == "query"
-    assert captured["json"]["model"] == "voyage-3.5"
-    assert metadata["provider"] == "voyage"
+    assert captured["json"]["model"] == "text-embedding-3-small"
+    assert metadata["provider"] == "openai"
 
 
 def test_ingestion_skips_editor_files(tmp_path: Path) -> None:

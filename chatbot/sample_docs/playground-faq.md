@@ -146,7 +146,7 @@ Current default ports:
 - Jenkins prod HTTP: `8081`
 - Jenkins dev HTTP: `8082`
 - nginx HTTPS: `8443`
-- Ollama: `11434`
+- Ollama: `11435`
 - chatbot: `8088`
 
 The same file defines shared URLs such as:
@@ -157,7 +157,7 @@ API_URL=http://127.0.0.1:8000
 GITEA_ROOT_URL=http://localhost:3000/
 GITLAB_EXTERNAL_URL=http://localhost:8929
 NGINX_URL=https://localhost:8443
-OLLAMA_URL=http://127.0.0.1:11434
+OLLAMA_URL=http://127.0.0.1:11435
 CHATBOT_URL=http://127.0.0.1:8088
 ```
 
@@ -425,7 +425,7 @@ when needed.
 Default URL:
 
 ```text
-http://127.0.0.1:11434
+http://127.0.0.1:11435
 ```
 
 Docker chatbot integration URL:
@@ -451,6 +451,8 @@ The `chatbot` service provides a local-first Python 3.12 chatbot with:
 - CLI interface
 - FastAPI REST API
 - simple browser UI
+- question history
+- one-click copy buttons in the web UI
 - deterministic configured rules
 - regex rules
 - whitelisted host commands
@@ -485,10 +487,48 @@ cd chatbot
 make up MODE=docker
 make ingest PATHS='sample_docs'
 .venv/bin/python -m app.cli ask "How are you?"
+.venv/bin/python -m app.cli history list --limit 20
 curl -s http://127.0.0.1:8088/api/chat \
   -H 'Content-Type: application/json' \
   -d '{"message":"How are you?"}'
 ```
+
+The chatbot web UI is available at:
+
+```text
+http://127.0.0.1:8088/chat
+```
+
+The ingestion UI is available at:
+
+```text
+http://127.0.0.1:8088/ingest
+```
+
+The chat page includes a history panel. Selecting an entry or pressing `Use`
+copies only the selected historical question into the question field; it does
+not send the question automatically.
+
+The chatbot also exposes history through REST:
+
+```bash
+curl -s http://127.0.0.1:8088/api/history?limit=20
+curl -s -X DELETE http://127.0.0.1:8088/api/history
+```
+
+Configured `Simon says` commands include:
+
+- `Simon says get time`: prints the current system time.
+- `Simon says get statistics`: prints SQLite ingestion summaries, duplicate
+  chunk checks, and Qdrant collection status.
+- `Simon says get docs`: lists files in the example document directory.
+- `Simon says get employees`: uses the generated GraphQL client library to list
+  employees from the API service.
+- `Simon says add employee <name> <surname> <role>`: adds an employee through
+  the API service. Quote roles with spaces, for example `Simon says add
+  employee Erika Mustermann "Senior Developer"`.
+- `Simon says delete employee <employeeId>`: deletes an employee through the
+  API service.
 
 ## How can the chatbot compare local files, SQLite, and Qdrant?
 
@@ -503,7 +543,7 @@ Default retrieval profiles include:
 - `qdrant_local_hash`
 - `qdrant_openai`
 - `qdrant_ollama`
-- `qdrant_anthropic_voyage`
+- `qdrant_anthropic_openai`
 
 This makes the chatbot useful for comparing answer quality and efficiency when
 using:
@@ -513,7 +553,7 @@ using:
 - Qdrant with the built-in local hash embedding
 - Qdrant with OpenAI embeddings
 - Qdrant with Ollama embeddings
-- Qdrant with Voyage embeddings recommended for Anthropic-style retrieval
+- Qdrant with OpenAI embeddings used for Anthropic-style retrieval
 
 Example compare call:
 

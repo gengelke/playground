@@ -40,37 +40,92 @@ rules:
       answer: |
         Try:
         - How are you?
-        - Simon says show time
-        - Simon says list sample docs
+        - Simon says get time
+        - Simon says get statistics
+        - Simon says get docs
+        - Simon says get employees
+        - Simon says add employee Erika Mustermann Developer
+        - Simon says delete employee 4711
         - what does the playground note say about Jenkins?
 
 tools:
   - name: local_time
     match:
       exact:
-        - show time
-        - local time
-        - what time is it locally?
+        - get time
       patterns:
-        - "^show time$"
-        - "^run local time$"
+        - "^get time$"
     command:
-      - python3
-      - -c
-      - "import datetime; print(datetime.datetime.now().isoformat(timespec='seconds'))"
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - time
     timeout_seconds: 5
 
-  - name: list_sample_docs
+  - name: ingestion_statistics
     match:
       exact:
-        - list sample docs
+        - get statistics
       patterns:
-        - "^show sample docs$"
+        - "^get statistics$"
     command:
-      - python3
-      - -c
-      - "from pathlib import Path; print('\\n'.join(sorted(p.name for p in Path('sample_docs').glob('*'))))"
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - statistics
     timeout_seconds: 5
+
+  - name: get_docs
+    match:
+      exact:
+        - get docs
+      patterns:
+        - "^get docs$"
+    command:
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - list-docs
+    timeout_seconds: 5
+
+  - name: get_employees
+    match:
+      exact:
+        - get employees
+      patterns:
+        - "^get employees$"
+    command:
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - employees
+    timeout_seconds: 45
+
+  - name: add_employee
+    usage: "add employee <name> <surname> <role>"
+    match:
+      patterns:
+        - "^add employee\\s+\\S+\\s+\\S+\\s+.+$"
+    command:
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - add-employee
+      - "{tool_message}"
+    timeout_seconds: 45
+
+  - name: delete_employee
+    usage: "delete employee <employeeId>"
+    match:
+      patterns:
+        - "^delete employee\\s+\\d+$"
+    command:
+      - "{python}"
+      - -m
+      - app.tool_commands
+      - delete-employee
+      - "{tool_message}"
+    timeout_seconds: 45
 
 local_files:
   - name: sample_docs
@@ -141,6 +196,11 @@ documents:
   pdf_section_chars: 5000
   pdf_min_section_chars: 1200
 
+history:
+  enabled: true
+  sqlite_path: data/history.sqlite
+  max_entries: 500
+
 retrieval:
   default_profile: hybrid
   ingest_profiles:
@@ -180,17 +240,17 @@ retrieval:
         provider: ollama
         model: nomic-embed-text
         vector_size: 768
-        base_url: ${OLLAMA_EMBED_URL:-http://localhost:11434/api/embeddings}
+        base_url: ${OLLAMA_EMBED_URL:-http://localhost:11434/api/embed}
         timeout_seconds: 180
-    - name: qdrant_anthropic_voyage
+    - name: qdrant_anthropic_openai
       type: qdrant
-      collection: chatbot_chunks_anthropic_voyage
+      collection: chatbot_chunks_anthropic_openai
       embedding:
-        provider: voyage
-        model: voyage-3.5
-        vector_size: 1024
-        base_url: ${VOYAGE_EMBED_URL:-https://api.voyageai.com/v1/embeddings}
-        api_key_env: VOYAGE_API_KEY
+        provider: openai
+        model: text-embedding-3-small
+        vector_size: 1536
+        base_url: https://api.openai.com/v1/embeddings
+        api_key_env: OPENAI_API_KEY
         timeout_seconds: 60
 
 qdrant:

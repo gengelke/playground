@@ -181,6 +181,17 @@ h2 {
   margin-bottom: 20px;
 }
 
+.field-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.field-heading label {
+  margin-bottom: 8px;
+}
+
 .chat-layout,
 .ingest-layout {
   display: grid;
@@ -289,6 +300,16 @@ select[multiple] {
   margin-top: 14px;
 }
 
+.button-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.button-row .copy-action {
+  flex: 1;
+}
+
 .primary-action {
   min-height: 48px;
   padding: 0 18px;
@@ -298,6 +319,22 @@ select[multiple] {
   color: #ffffff;
   font-weight: 800;
   cursor: pointer;
+}
+
+.copy-action {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: #ffffff;
+  color: var(--muted);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.copy-action:hover {
+  color: var(--green);
+  border-color: rgba(61, 122, 71, 0.42);
 }
 
 button:disabled {
@@ -315,10 +352,23 @@ button:disabled {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 22px;
+  align-items: stretch;
+}
+
+.results-layout .panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  margin-top: 0;
+}
+
+.results-layout .section-heading {
+  flex: 0 0 auto;
 }
 
 .terminal-display {
-  height: 360px;
+  flex: 1 1 auto;
+  min-height: 520px;
   margin: 0;
   padding: 18px;
   border: 1px solid rgba(43, 139, 134, 0.16);
@@ -357,5 +407,9 @@ code {
   .topbar {
     align-items: start;
     flex-direction: column;
+  }
+
+  .terminal-display {
+    min-height: 420px;
   }
 }

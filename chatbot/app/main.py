@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 from app.chat import ChatService
 from app.config import PROJECT_ROOT, load_config
+from app.history import clear_history, delete_history_item, get_history_item, list_history
 from app.ingest import ingest_paths, ignored_document_reason
 from app.models import ChatRequest
 from app.retrieval import configured_retrieval_profiles, default_ingest_profiles, default_retrieval_profile
@@ -103,6 +104,27 @@ def chat_compare(request: ChatCompareApiRequest) -> dict[str, Any]:
         ),
         request.retrieval_profiles,
     )
+
+
+@app.get("/api/history")
+def history(limit: int = 50) -> dict[str, Any]:
+    return {"items": list_history(config, limit=limit)}
+
+
+@app.get("/api/history/{history_id}")
+def history_item(history_id: int) -> dict[str, Any]:
+    item = get_history_item(config, history_id)
+    return {"item": item}
+
+
+@app.delete("/api/history")
+def history_clear() -> dict[str, Any]:
+    return {"deleted": clear_history(config)}
+
+
+@app.delete("/api/history/{history_id}")
+def history_delete_item(history_id: int) -> dict[str, Any]:
+    return {"deleted": delete_history_item(config, history_id)}
 
 
 @app.get("/api/retrieval-profiles")

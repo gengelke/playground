@@ -1,13 +1,13 @@
 # Local-first Chatbot
 
 > [!WARNING]
-> This repository is an experimental setup for educational purposes only.
+> This service is an experimental setup for educational purposes only.
 > Do not expose any part of it to the public internet.
 > It uses insecure defaults such as default passwords and other convenience settings that are only acceptable for isolated local testing.
 
 > [!IMPORTANT]
-> Parts of this repository were generated with AI assistance.
-> Review generated code and configuration carefully before using or modifying it.
+> Parts of this service were generated with AI assistance.
+> Review generated code and configuration carefully before using or modifying this service.
 
 This is a simple Python 3.12 chatbot component for the DevOps playground. It can
 run by itself, or it can be added to a larger docker-compose setup and connected
@@ -53,7 +53,11 @@ chatbot/
     models.py        small dataclasses
     retrieval.py     SQLite and Qdrant retrieval
     sources.py       rules, tools, files, REST, SQLite, web search
-    static/index.html
+    static/chat.html
+    static/ingest.html
+    static/app.js
+    static/styles.css
+    static/index.html redirect to /chat
   config/config.yml
   sample_docs/devops-playground.md
   tests/
@@ -88,9 +92,14 @@ Manual equivalent:
 ```bash
 cd chatbot
 python3.12 -m venv .venv
+# or, if python3.12 is not installed:
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+The Makefile prefers `python3.12`, then `python3.11`, then `python3.10`. You
+can also override it explicitly, for example `make PYTHON=python3.11 ingest`.
 
 For the local LLM path, also start Ollama:
 
@@ -127,13 +136,22 @@ python -m app.cli ask "How are you?"
 Whitelisted command:
 
 ```bash
-python -m app.cli ask "Simon says show time"
+python -m app.cli ask "Simon says get time"
 ```
 
 Interactive mode:
 
 ```bash
 python -m app.cli shell
+```
+
+Question history:
+
+```bash
+python -m app.cli history list --limit 20
+python -m app.cli history show 1
+python -m app.cli history delete 1
+python -m app.cli history clear
 ```
 
 Select a provider and model:
@@ -157,7 +175,7 @@ Compare the same question against multiple retrieval profiles:
 
 ```bash
 python -m app.cli compare "Who maintains the playground?" \
-  --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage \
+  --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai \
   --provider anthropic
 ```
 
@@ -203,6 +221,19 @@ curl -s http://localhost:8088/api/chat \
 
 `use_rag` and `use_local_files` are mutually exclusive.
 
+History endpoints:
+
+```bash
+curl -s http://localhost:8088/api/history?limit=20 | jq
+curl -s http://localhost:8088/api/history/1 | jq
+curl -s -X DELETE http://localhost:8088/api/history/1 | jq
+curl -s -X DELETE http://localhost:8088/api/history | jq
+```
+
+The chat web UI has a history panel. Refresh loads recent entries, selecting an
+entry or pressing Use copies only the selected question into the question field,
+and Clear removes stored history.
+
 ## Retrieval Profile Experiments
 
 Retrieval profiles make it possible to ask the same question against different
@@ -214,7 +245,7 @@ the same, for example Anthropic or OpenAI, and change only the retrieval
 profile. That lets you compare whether the answer changes because the chatbot
 used direct local files, SQLite token matching, Qdrant with the built-in local
 hash vectors, Qdrant with OpenAI embeddings, Qdrant with Ollama embeddings, or
-Qdrant with Voyage embeddings.
+Qdrant with OpenAI embeddings for Anthropic-backed answering.
 
 The default profiles are:
 
@@ -227,19 +258,19 @@ The default profiles are:
   embeddings.
 - `qdrant_ollama`: searches a separate Qdrant collection created with Ollama
   embeddings.
-- `qdrant_anthropic_voyage`: searches a separate Qdrant collection created with
-  Voyage embeddings, which are the embedding models Anthropic recommends in its
-  embeddings documentation.
+- `qdrant_anthropic_openai`: searches a separate Qdrant collection created with
+  OpenAI embeddings and is intended for Anthropic answer generation paired with
+  a real embedding model already present in this setup.
 
 Each Qdrant embedding strategy uses its own collection. Do not mix local hash,
-OpenAI, Ollama, and Voyage embeddings in one Qdrant collection because their
-vectors are not comparable.
+OpenAI, and Ollama embeddings in one Qdrant collection because their vectors
+are not comparable.
 
 OpenAI embedding ingestion requires `OPENAI_API_KEY`. Ollama embedding ingestion
 uses `nomic-embed-text`; the chatbot Makefile pulls that model when it starts
 the sibling Ollama service. Anthropic does not provide its own embedding model;
-the `qdrant_anthropic_voyage` profile uses Voyage AI and requires
-`VOYAGE_API_KEY`.
+the `qdrant_anthropic_openai` profile reuses OpenAI embeddings so Anthropic
+answers can still run against a real semantic retrieval index.
 
 List configured profiles:
 
@@ -270,7 +301,7 @@ curl -s http://localhost:8088/api/chat/compare \
     "message": "Who maintains the playground?",
     "provider": "openai",
     "model": "gpt-4.1-mini",
-    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai", "qdrant_anthropic_voyage"]
+    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai", "qdrant_anthropic_openai"]
   }' | jq
 ```
 
@@ -318,14 +349,14 @@ to inspect raw vector ranking only.
 
 ```bash
 python -m app.cli ingest sample_docs --reset
-python -m app.cli ingest sample_docs --reset --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage
+python -m app.cli ingest sample_docs --reset --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai
 python -m app.cli ask "Jenkins REST API playground note"
 ```
 
 The Makefile helper accepts the same profile list:
 
 ```bash
-make ingest PATHS='sample_docs' PROFILES='sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage'
+make ingest PATHS='sample_docs' PROFILES='sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai'
 ```
 
 PDFs can be ingested from the CLI the same way. The PDF is prepared into
@@ -358,13 +389,15 @@ curl -s http://localhost:8088/api/ingest/files \
   -F 'files=@/path/to/example-ebook.pdf;type=application/pdf' | jq
 ```
 
-The web UI at `http://localhost:8088/` also has an ingestion form. Enter one
-server-visible path per line, for example `sample_docs`. In Docker mode, paths
-must exist inside the chatbot container or be mounted into it. The same form can
-also upload files selected in the browser. Uploaded files are stored under
-`data/uploads` inside the chatbot service and then ingested into SQLite/Qdrant.
-PDF uploads are extracted, cleaned, converted to Markdown under
-`data/uploads/prepared`, and then ingested from that prepared text.
+The web UI is split into `http://localhost:8088/chat` and
+`http://localhost:8088/ingest`. The root path redirects to `/chat`. Use the
+ingest page to enter one server-visible path per line, for example
+`sample_docs`. In Docker mode, paths must exist inside the chatbot container or
+be mounted into it. The same page can also upload files selected in the
+browser. Uploaded files are stored under `data/uploads` inside the chatbot
+service and then ingested into SQLite/Qdrant. PDF uploads are extracted,
+cleaned, converted to Markdown under `data/uploads/prepared`, and then
+ingested from that prepared text.
 
 Supported document inputs are text-like files (`.txt`, `.md`, `.json`, `.yaml`,
 `.csv`, `.html`, logs), simple `.epub` text extraction, and `.pdf` preparation
@@ -373,6 +406,82 @@ lines, fixes common hyphenated line breaks, normalizes paragraphs, writes
 Markdown sections, and ingests those sections. Temporary/editor files such as
 `.swp`, `.un~`, `.bak`, and files ending in `~` are skipped so stale editor
 state does not become RAG context.
+
+## Inspecting Ingested Data
+
+The chatbot keeps ingested chunks in SQLite and stores Qdrant vectors in one
+collection per Qdrant retrieval profile. There is no dedicated document catalog
+API yet, but the stored data can be inspected directly.
+
+List documents currently stored in the SQLite chunk store:
+
+```bash
+cd chatbot
+sqlite3 data/documents.sqlite "
+select
+  source_path,
+  count(*) as chunks,
+  datetime(min(created_at), 'unixepoch', 'localtime') as first_ingested,
+  datetime(max(created_at), 'unixepoch', 'localtime') as last_ingested
+from chunks
+group by source_path
+order by max(created_at) desc;
+"
+```
+
+This shows each ingested source path, how many chunks it produced, and when the
+oldest/newest chunk rows for that document were inserted.
+
+Show chunk previews for one document:
+
+```bash
+sqlite3 data/documents.sqlite "
+select chunk_index, substr(text, 1, 160) as preview
+from chunks
+where source_path = 'sample_docs/playground-faq.md'
+order by chunk_index;
+"
+```
+
+This is useful when checking whether the prepared text from a PDF or upload
+contains the expected content before debugging retrieval quality.
+
+Check whether repeated ingestion created duplicate chunk rows:
+
+```bash
+sqlite3 data/documents.sqlite "
+select source_path, chunk_index, count(*) as copies
+from chunks
+group by source_path, chunk_index
+having count(*) > 1
+order by copies desc, source_path, chunk_index;
+"
+```
+
+Duplicates are expected if the same file is ingested repeatedly without
+`reset:true`; they can make retrieval repetitive.
+
+List Qdrant collections:
+
+```bash
+curl -s http://127.0.0.1:6333/collections | jq
+```
+
+Inspect one Qdrant collection:
+
+```bash
+curl -s http://127.0.0.1:6333/collections/chatbot_chunks_openai | jq
+```
+
+Qdrant can show collection status and point counts. The current Qdrant payloads
+store `text`, `source_path`, and `chunk_id`, but not a full ingest history.
+
+The same basic inspection is also available through the whitelisted chatbot
+command:
+
+```bash
+python -m app.cli ask "Simon says get statistics"
+```
 
 ## Document Chunks
 
@@ -480,7 +589,7 @@ In this chatbot, Qdrant ingestion currently works like this:
 document
   -> chunks
   -> SQLite rows
-  -> local vectors
+  -> profile-specific embeddings
   -> Qdrant points
 ```
 
@@ -503,20 +612,28 @@ question
   -> LLM answers from the chunk text
 ```
 
-The current implementation uses a small deterministic local embedding function
-instead of calling OpenAI, Ollama, Anthropic, or another external embedding
-model. It tokenizes the text, hashes the tokens into a fixed-size vector, and
-normalizes that vector. This keeps ingestion fully local and makes Qdrant usable
-without API keys, internet access, or a separately downloaded embedding model.
+The current implementation supports multiple embedding strategies through
+retrieval profiles:
 
-That local embedding is useful as a simple first version, but it is not as
+- `qdrant_local_hash`: small deterministic local token-hash vectors
+- `qdrant_openai`: OpenAI embeddings
+- `qdrant_ollama`: Ollama embeddings via `nomic-embed-text`
+- `qdrant_anthropic_openai`: OpenAI embeddings paired with Anthropic answer
+  generation
+
+The local-hash embedding keeps ingestion fully local and makes Qdrant usable
+without API keys, internet access, or a separately downloaded embedding model.
+It tokenizes the text, hashes the tokens into a fixed-size vector, and
+normalizes that vector.
+
+That local embedding is useful as a simple baseline, but it is not as
 semantically strong as a real embedding model. It works best when the question
 and the stored chunks share related words. It is weaker for synonyms,
 paraphrases, multilingual meaning, and deeper semantic similarity.
 
-A real embedding model is not required for the current implementation, but it
-would improve retrieval quality. Common production-style setups use a dedicated
-embedding model for retrieval and a separate chat model for answering:
+Real embedding models are already supported and generally improve retrieval
+quality. Common production-style setups use a dedicated embedding model for
+retrieval and a separate chat model for answering:
 
 ```text
 embedding model: text-embedding-3-small
@@ -532,37 +649,36 @@ answer model:    llama3.1 via Ollama
 
 The embedding model does not need to be the same model as the answering LLM.
 The important rule is that the same embedding method must be used when indexing
-documents and when searching them. If documents are ingested with one embedding
-model and questions are embedded with another, Qdrant compares vectors from
-different numeric spaces and the results become unreliable.
+documents and when searching them within one retrieval profile. If documents are
+ingested with one embedding model and questions are embedded with another,
+Qdrant compares vectors from different numeric spaces and the results become
+unreliable.
 
-Because of that, changing the embedding method requires reingesting the RAG
-corpus. The Qdrant collection vector size must also match the selected
-embedding model. The current local embedding uses the configured
-`qdrant.vector_size` value, which defaults to `96`.
-
-The pragmatic next improvement would be to make embeddings configurable, for
-example:
+Because of that, changing the embedding method for a profile requires
+reingesting that profile's RAG corpus. The Qdrant collection vector size must
+also match the selected embedding model. This is already configured per profile
+under `retrieval.profiles`, for example:
 
 ```yaml
-embeddings:
-  provider: local_hash
-  model: local-hash-96
-  vector_size: 96
+- name: qdrant_local_hash
+  type: qdrant
+  collection: chatbot_chunks_local_hash
+  embedding:
+    provider: local_hash
+    model: local-hash-96
+    vector_size: 96
+
+- name: qdrant_ollama
+  type: qdrant
+  collection: chatbot_chunks_ollama
+  embedding:
+    provider: ollama
+    model: nomic-embed-text
+    vector_size: 768
 ```
 
-or:
-
-```yaml
-embeddings:
-  provider: ollama
-  model: nomic-embed-text
-  vector_size: 768
-```
-
-The chatbot would then use the configured embedding provider for both ingestion
-and Qdrant search. Until then, the deterministic local embedding keeps the
-standalone setup simple and predictable.
+This keeps the setup simple while still letting you compare a fully local
+baseline with stronger semantic embeddings.
 
 ## Retrieval Options Compared
 
@@ -766,7 +882,7 @@ time loading the model and CPU-only inference may be slow.
 In bare chatbot mode, the default URL is:
 
 ```text
-http://localhost:11434/api/chat
+http://127.0.0.1:11435/api/chat
 ```
 
 In Docker chatbot mode, `LOCAL_LLM_URL` defaults to:
@@ -778,6 +894,10 @@ http://playground-ollama:11434/api/chat
 The Docker chatbot and Docker Ollama services use the shared Docker network
 `playground-llm`, which avoids accidentally talking to a host-installed Ollama
 on the same port.
+
+The bare-mode chatbot Makefile points at the playground Ollama Docker service on
+`OLLAMA_URL`, which defaults to `http://127.0.0.1:11435`. This keeps it
+separate from a host-installed Ollama that may already be using `11434`.
 
 If you prefer a host-installed Ollama instead of the Docker service, disable the
 automatic dependency and run Ollama yourself:
@@ -804,13 +924,6 @@ Set an Anthropic key only when you want to use that provider:
 
 ```bash
 export ANTHROPIC_API_KEY=...
-```
-
-Set a Voyage key only when you want to ingest or search the
-`qdrant_anthropic_voyage` retrieval profile:
-
-```bash
-export VOYAGE_API_KEY=...
 ```
 
 For Docker Compose, start from the provided environment template:
@@ -851,7 +964,7 @@ Add a regex rule:
 rules:
   patterns:
     - pattern: "^help$"
-      answer: "Try Simon says show time, Simon says list sample docs, or ask about Jenkins."
+      answer: "Try Simon says get time, Simon says get statistics, Simon says get docs, or Simon says get employees."
 ```
 
 Add a whitelisted host command:
@@ -860,15 +973,31 @@ Add a whitelisted host command:
 tools:
   - name: local_time
     match:
-      exact: ["show time", "local time"]
-    command: ["python", "-c", "import datetime; print(datetime.datetime.now().isoformat())"]
+      exact: ["get time"]
+    command: ["{python}", "-m", "app.tool_commands", "time"]
     timeout_seconds: 5
 ```
 
 Commands are never built from user input. A user message can only select a tool
 that is explicitly configured. Tool execution also requires the message to start
-with `Simon says`, for example `Simon says show time` or
-`Simon says list sample docs`.
+with `Simon says`.
+
+The sample config includes these commands:
+
+- `Simon says get time`: prints the host/container system time.
+- `Simon says get statistics`: prints SQLite ingestion summaries, duplicate
+  chunk checks, and Qdrant collection status.
+- `Simon says get docs`: lists files in the configured example docs directory.
+- `Simon says get employees`: uses the generated playground GraphQL client
+  library from `api/graphql-library/generated` and returns the current
+  employees from the API service. In Docker mode, that generated library is
+  mounted read-only into the chatbot container.
+- `Simon says add employee <name> <surname> <role>`: adds an employee through
+  the playground GraphQL API. The chatbot generates the employee ID. Quote the
+  role if it contains spaces, for example `Simon says add employee Erika
+  Mustermann "Senior Developer"`.
+- `Simon says delete employee <employeeId>`: deletes the employee with that ID
+  through the playground GraphQL API.
 
 ## Integrating With The DevOps Playground
 

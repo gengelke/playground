@@ -8,15 +8,17 @@ services:
       CHATBOT_CONFIG: /app/config/config.yml
       QDRANT_URL: http://qdrant:6333
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://playground-ollama:11434/api/chat}
-      OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embeddings}
-      VOYAGE_EMBED_URL: ${VOYAGE_EMBED_URL:-https://api.voyageai.com/v1/embeddings}
+      OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embed}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       COMPANY_API_URL: ${COMPANY_API_URL:-http://host.docker.internal:8001/health}
+      API_URL: ${API_URL:-http://host.docker.internal:8000/graphql}
+      FASTAPI_BASIC_AUTH_USERNAME: ${FASTAPI_BASIC_AUTH_USERNAME:-admin}
+      FASTAPI_BASIC_AUTH_PASSWORD: ${FASTAPI_BASIC_AUTH_PASSWORD:-password}
     volumes:
       - ./config:/app/config:ro
       - ./sample_docs:/app/sample_docs:ro
+      - ../api/graphql-library/generated:/api/graphql-library/generated:ro
       - chatbot-data:/app/data
     depends_on:
       - qdrant

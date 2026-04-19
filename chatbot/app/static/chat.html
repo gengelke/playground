@@ -34,7 +34,10 @@
 
         <form id="chat-form" class="chat-layout">
           <section class="console-surface composer">
-            <label for="message">Question or command</label>
+            <div class="field-heading">
+              <label for="message">Question or command</label>
+              <button class="copy-action" type="button" data-copy-target="message">Copy</button>
+            </div>
             <textarea id="message" required>How are you?</textarea>
             <p class="hint">Press Enter to send. Press Shift+Enter for a new line.</p>
 
@@ -82,6 +85,18 @@
               <select id="compare-profiles" multiple></select>
               <label class="switch inline-switch"><input id="compare-select-all" type="checkbox"><span>Select all compare profiles</span></label>
             </section>
+
+            <section id="history-block" class="control-block">
+              <div class="field-heading">
+                <label for="history-list">History</label>
+                <button id="history-refresh" class="copy-action" type="button">Refresh</button>
+              </div>
+              <select id="history-list" size="8"></select>
+              <div class="button-row">
+                <button id="history-use" class="copy-action" type="button">Use</button>
+                <button id="history-clear" class="copy-action" type="button">Clear</button>
+              </div>
+            </section>
           </aside>
         </form>
       </section>
@@ -92,6 +107,7 @@
             <div>
               <h2>Answer</h2>
             </div>
+            <button class="copy-action" type="button" data-copy-target="answer">Copy</button>
           </div>
           <pre id="answer" class="terminal-display">Waiting for a question.</pre>
         </section>
@@ -101,12 +117,13 @@
             <div>
               <h2>Metadata</h2>
             </div>
+            <button class="copy-action" type="button" data-copy-target="metadata">Copy</button>
           </div>
           <pre id="metadata" class="terminal-display meta-display">{}</pre>
         </section>
       </section>
     </main>
 
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=history-5"></script>
   </body>
 </html>

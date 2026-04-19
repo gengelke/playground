@@ -4,6 +4,7 @@ import json
 import re
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -78,10 +79,11 @@ def run_configured_tool(config: dict[str, Any], message: str) -> dict[str, Any] 
         command = tool.get("command")
         if not isinstance(command, list) or not all(isinstance(part, str) for part in command):
             return {"name": tool.get("name"), "error": "tool command must be a list of strings"}
+        resolved_command = [resolve_command_part(part, tool_message) for part in command]
 
         try:
             completed = subprocess.run(
-                command,
+                resolved_command,
                 cwd=config.get("_project_root"),
                 text=True,
                 capture_output=True,
@@ -107,13 +109,27 @@ def tool_message_body(message: str) -> str | None:
     prefix = f"{TOOL_PREFIX} "
     if not normalized.startswith(prefix):
         return None
-    return normalized[len(prefix):].strip()
+    return message.strip()[len(prefix):].strip()
+
+
+def resolve_command_part(part: str, tool_message: str) -> str:
+    if part == "{python}":
+        return sys.executable
+    if part == "{tool_message}":
+        return tool_message
+    return part
 
 
 def configured_tool_commands(config: dict[str, Any]) -> list[str]:
     commands: list[str] = []
     seen: set[str] = set()
     for tool in config.get("tools", []):
+        usage = tool.get("usage")
+        if usage:
+            normalized_usage = normalize_text(str(usage))
+            if normalized_usage not in seen:
+                seen.add(normalized_usage)
+                commands.append(str(usage))
         for exact in tool.get("match", {}).get("exact", []) or []:
             normalized = normalize_text(str(exact))
             if not normalized or normalized in seen:

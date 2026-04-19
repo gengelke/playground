@@ -4,6 +4,7 @@ import time
 from typing import Any
 
 from app.config import load_config
+from app.history import record_chat
 from app.llm import call_llm, selected_provider_model
 from app.models import ChatRequest, ChatResponse, RetrievedChunk
 from app.retrieval import default_retrieval_profile, get_retrieval_profile, search_retrieval_profile
@@ -52,94 +53,94 @@ class ChatService:
         use_rag = request.use_rag or request.rag_only
         retrieval_profile = request.retrieval_profile or default_retrieval_profile(self.config)
         if use_rag and request.use_local_files:
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer="Choose either RAG or local files, not both.",
                 source="validation",
                 metadata={"use_rag": use_rag, "use_local_files": request.use_local_files},
-            )
+            ))
 
         static_answer = static_question_answer(self.config, message)
         if static_answer:
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer=static_answer.get("answer", ""),
                 source="rule_exact",
                 metadata={"matched": static_answer.get("question"), "commands": static_answer.get("commands", [])},
-            )
+            ))
 
         exact_rule = match_exact_rule(self.config, message)
         if exact_rule:
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer=exact_rule.get("answer", ""),
                 source="rule_exact",
                 metadata={"matched": exact_rule.get("question"), "normalized": normalized},
-            )
+            ))
 
         pattern_rule = match_pattern_rule(self.config, message)
         if pattern_rule:
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer=pattern_rule.get("answer", ""),
                 source="rule_pattern",
                 metadata={"pattern": pattern_rule.get("pattern")},
-            )
+            ))
 
         if request.use_local_files:
             local_file_result = search_local_files(self.config, message, require_match=False)
             if local_file_result:
-                return ChatResponse(
+                return self.finalize_response(request, ChatResponse(
                     answer=format_file_answer(local_file_result),
                     source="local_file",
                     metadata=local_file_result,
-                )
-            return ChatResponse(
+                ))
+            return self.finalize_response(request, ChatResponse(
                 answer="No relevant local file content found.",
                 source="local_file_empty",
                 metadata={"use_local_files": True},
-            )
+            ))
 
         tool_result = run_configured_tool(self.config, message)
         if tool_result:
             if tool_result.get("error"):
-                return ChatResponse(
+                return self.finalize_response(request, ChatResponse(
                     answer=f"Configured tool '{tool_result.get('name')}' failed: {tool_result.get('error')}",
                     source="tool",
                     tool=tool_result.get("name"),
                     metadata=tool_result,
-                )
-            return ChatResponse(
+                ))
+            return self.finalize_response(request, ChatResponse(
                 answer=tool_result.get("output") or "(tool returned no output)",
                 source="tool",
                 tool=tool_result.get("name"),
                 metadata=tool_result,
-            )
+            ))
 
         if not use_rag:
             sqlite_result = query_configured_sqlite(self.config, message)
             if sqlite_result:
                 if sqlite_result.get("error"):
-                    return ChatResponse(
+                    return self.finalize_response(request, ChatResponse(
                         answer=f"SQLite source '{sqlite_result.get('name')}' is unavailable: {sqlite_result.get('error')}",
                         source="sqlite_source",
                         metadata=sqlite_result,
-                    )
-                return ChatResponse(
+                    ))
+                return self.finalize_response(request, ChatResponse(
                     answer=format_rows(sqlite_result.get("rows", [])),
                     source="sqlite_source",
                     metadata=sqlite_result,
-                )
+                ))
 
             rest_result = query_rest_sources(self.config, message)
             if rest_result:
                 if rest_result.get("error") or int(rest_result.get("status_code", 500)) >= 400:
-                    return ChatResponse(
+                    return self.finalize_response(request, ChatResponse(
                         answer=f"REST source '{rest_result.get('name')}' is unavailable or returned an error.",
                         source="rest_source",
                         metadata=rest_result,
-                    )
-                return ChatResponse(
+                    ))
+                return self.finalize_response(request, ChatResponse(
                     answer=format_rest_answer(rest_result),
                     source="rest_source",
                     metadata=rest_result,
-                )
+                ))
 
         rag_chunks: list[RetrievedChunk] = []
         retrieval_metadata: dict[str, Any] = {}
@@ -152,13 +153,13 @@ class ChatService:
                     local_file_result = search_local_files(self.config, message, require_match=False)
                     retrieval_metadata["latency_ms"] = elapsed_ms(retrieval_started)
                     if not local_file_result:
-                        return ChatResponse(
+                        return self.finalize_response(request, ChatResponse(
                             answer="No relevant local file content found.",
                             source="local_file_empty",
                             metadata={"context": [], "use_rag": use_rag, "retrieval": retrieval_metadata},
-                        )
+                        ))
                     chunks = local_file_context_chunks(local_file_result, retrieval_profile)
-                    return ChatResponse(
+                    return self.finalize_response(request, ChatResponse(
                         answer=format_file_answer(local_file_result),
                         source="local_file",
                         metadata={
@@ -166,27 +167,27 @@ class ChatService:
                             "chunks": chunks_metadata(chunks),
                             "retrieval": retrieval_metadata,
                         },
-                    )
+                    ))
                 else:
                     rag_chunks = search_retrieval_profile(self.config, message, retrieval_profile)
             except Exception as exc:
-                return ChatResponse(
+                return self.finalize_response(request, ChatResponse(
                     answer=f"Retrieval profile '{retrieval_profile}' is unavailable: {exc}",
                     source="retrieval_error",
                     metadata={"retrieval_profile": retrieval_profile, "error": str(exc)},
-                )
+                ))
             retrieval_metadata["latency_ms"] = elapsed_ms(retrieval_started)
 
         if use_rag and not rag_chunks:
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer="No relevant RAG context found.",
                 source="rag_empty",
                 metadata={"context": [], "use_rag": use_rag, "retrieval": retrieval_metadata},
-            )
+            ))
 
         web_result = None if use_rag else search_web(self.config, message, request.use_web_search)
         if web_result and web_result.get("answer") and not should_call_llm(message, request):
-            return ChatResponse(answer=web_result["answer"], source="web_search", metadata=web_result)
+            return self.finalize_response(request, ChatResponse(answer=web_result["answer"], source="web_search", metadata=web_result))
 
         context = chunks_to_context(rag_chunks)
         if web_result and web_result.get("related"):
@@ -196,7 +197,7 @@ class ChatService:
         llm_result = call_llm(self.config, message, provider=provider, model=model, context=context)
         llm_latency_ms = elapsed_ms(llm_started)
         if rag_chunks and llm_result.metadata.get("error"):
-            return ChatResponse(
+            return self.finalize_response(request, ChatResponse(
                 answer=format_chunks(rag_chunks),
                 source="rag_context",
                 provider=llm_result.provider,
@@ -207,9 +208,9 @@ class ChatService:
                     "retrieval": retrieval_metadata,
                     "latency_ms": elapsed_ms(started),
                 },
-            )
+            ))
 
-        return ChatResponse(
+        return self.finalize_response(request, ChatResponse(
             answer=llm_result.answer,
             source="llm" if not llm_result.metadata.get("error") else "none",
             provider=llm_result.provider,
@@ -220,7 +221,7 @@ class ChatService:
                 "retrieval": retrieval_metadata if use_rag else None,
                 "latency_ms": elapsed_ms(started),
             },
-        )
+        ))
 
     def compare(self, request: ChatRequest, retrieval_profiles: list[str]) -> dict[str, Any]:
         results = []
@@ -250,6 +251,12 @@ class ChatService:
                 }
             )
         return {"message": request.message, "results": results}
+
+    def finalize_response(self, request: ChatRequest, response: ChatResponse) -> ChatResponse:
+        history_id = record_chat(self.config, request, response)
+        if history_id is not None:
+            response.metadata = {**response.metadata, "history_id": history_id}
+        return response
 
 
 def should_call_llm(message: str, request: ChatRequest) -> bool:

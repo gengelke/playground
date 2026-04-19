@@ -25,6 +25,73 @@ function fitSelectToOptions(select) {
   select.size = Math.max(1, select.options.length);
 }
 
+function textForCopy(element) {
+  if (!element) {
+    return "";
+  }
+  if ("value" in element) {
+    return element.value;
+  }
+  return element.textContent || "";
+}
+
+async function copyText(text) {
+  if (navigator.clipboard && window.isSecureContext) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const fallback = document.createElement("textarea");
+  fallback.value = text;
+  fallback.setAttribute("readonly", "");
+  fallback.style.position = "fixed";
+  fallback.style.left = "-9999px";
+  document.body.appendChild(fallback);
+  fallback.select();
+  document.execCommand("copy");
+  fallback.remove();
+}
+
+function initCopyButtons() {
+  for (const button of document.querySelectorAll("[data-copy-target]")) {
+    button.addEventListener("click", async () => {
+      const target = document.getElementById(button.dataset.copyTarget);
+      const originalText = button.textContent;
+      try {
+        await copyText(textForCopy(target));
+        button.textContent = "Copied";
+      } catch (error) {
+        button.textContent = "Failed";
+      } finally {
+        window.setTimeout(() => {
+          button.textContent = originalText;
+        }, 1200);
+      }
+    });
+  }
+}
+
+function shortHistoryTime(value) {
+  if (!value) {
+    return "";
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+  return date.toLocaleString("de-DE", {
+    year: "2-digit",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  });
+}
+
+function paddedHistoryId(value) {
+  return String(value).padStart(3, "0");
+}
+
 async function loadRetrievalProfiles() {
   const response = await fetch("/api/retrieval-profiles");
   const data = await response.json();
@@ -58,6 +125,15 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 180000) {
   }
 }
 
+async function loadHistory(limit = 50) {
+  const response = await fetch(`/api/history?limit=${limit}`);
+  if (!response.ok) {
+    throw new Error(`History load failed (${response.status})`);
+  }
+  const data = await response.json();
+  return data.items || [];
+}
+
 async function initChatPage() {
   const form = document.getElementById("chat-form");
   if (!form) {
@@ -80,6 +156,11 @@ async function initChatPage() {
   const providerBlock = document.getElementById("provider-block");
   const modelBlock = document.getElementById("model-block");
   const modeBlock = document.getElementById("mode-block");
+  const historyList = document.getElementById("history-list");
+  const historyRefresh = document.getElementById("history-refresh");
+  const historyUse = document.getElementById("history-use");
+  const historyClear = document.getElementById("history-clear");
+  let historyItems = [];
 
   function setBlockState(element, {disabled = false, hidden = false} = {}) {
     if (!element) {
@@ -136,6 +217,25 @@ async function initChatPage() {
     setBlockState(modeBlock, {disabled: false});
   }
 
+  async function refreshHistory() {
+    if (!historyList) {
+      return;
+    }
+    historyList.innerHTML = "";
+    historyList.append(new Option("Loading history...", ""));
+    historyItems = await loadHistory(50);
+    historyList.innerHTML = "";
+    if (historyItems.length === 0) {
+      historyList.append(new Option("No history yet.", ""));
+      return;
+    }
+    const sortedItems = [...historyItems].sort((left, right) => Number(left.id) - Number(right.id));
+    for (const item of sortedItems) {
+      const label = `${paddedHistoryId(item.id)}: ${item.message}`;
+      historyList.append(new Option(label, String(item.id)));
+    }
+  }
+
   try {
     const {data, profiles} = await loadRetrievalProfiles();
     retrievalProfile.innerHTML = "";
@@ -144,7 +244,7 @@ async function initChatPage() {
     for (const profile of profiles) {
       const label = `${profile.name} (${profile.type})`;
       retrievalProfile.append(new Option(label, profile.name, false, profile.name === data.default_profile));
-      compareProfiles.append(new Option(label, profile.name, false, ["sqlite", "qdrant_local_hash"].includes(profile.name)));
+      compareProfiles.append(new Option(label, profile.name, false, true));
     }
 
     fitSelectToOptions(compareProfiles);
@@ -173,10 +273,44 @@ async function initChatPage() {
     syncChatUiState();
   });
 
+  function useSelectedHistoryQuestion() {
+    const selected = historyItems.find((item) => String(item.id) === historyList.value);
+    if (!selected) {
+      return;
+    }
+    message.value = selected.message;
+    message.focus();
+  }
+
   message.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       form.requestSubmit();
+    }
+  });
+
+  historyRefresh.addEventListener("click", async () => {
+    try {
+      await refreshHistory();
+    } catch (error) {
+      metadata.textContent = JSON.stringify({history_error: String(error)}, null, 2);
+      historyList.innerHTML = "";
+      historyList.append(new Option(`History unavailable: ${String(error)}`, ""));
+    }
+  });
+
+  historyList.addEventListener("change", useSelectedHistoryQuestion);
+  historyUse.addEventListener("click", useSelectedHistoryQuestion);
+
+  historyClear.addEventListener("click", async () => {
+    if (!window.confirm("Clear chat history?")) {
+      return;
+    }
+    try {
+      await fetch("/api/history", {method: "DELETE"});
+      await refreshHistory();
+    } catch (error) {
+      metadata.textContent = JSON.stringify({history_error: String(error)}, null, 2);
     }
   });
 
@@ -228,10 +362,17 @@ async function initChatPage() {
       answer.textContent = String(error);
     } finally {
       send.disabled = false;
+      refreshHistory().catch(() => {});
     }
   });
 
   syncChatUiState();
+  refreshHistory().catch((error) => {
+    if (historyList) {
+      historyList.innerHTML = "";
+      historyList.append(new Option(`History unavailable: ${String(error)}`, ""));
+    }
+  });
 }
 
 async function initIngestPage() {
@@ -255,7 +396,7 @@ async function initIngestPage() {
         continue;
       }
       const label = `${profile.name} (${profile.type})`;
-      ingestProfiles.append(new Option(label, profile.name, false, (data.default_ingest_profiles || []).includes(profile.name)));
+      ingestProfiles.append(new Option(label, profile.name, false, true));
     }
 
     fitSelectToOptions(ingestProfiles);
@@ -367,3 +508,5 @@ if (page === "chat") {
 } else if (page === "ingest") {
   initIngestPage();
 }
+
+initCopyButtons();
