@@ -75,9 +75,10 @@ cd chatbot
 make run MODE=bare
 ```
 
-That creates `.venv`, installs `requirements.txt`, starts the sibling `ollama`
-service, pulls `llama3.1` if needed, and starts uvicorn in the foreground.
-Ollama model data is preserved on the host under `ollama/data`.
+That creates `.venv`, installs `requirements.txt`, starts the sibling `qdrant`
+and `ollama` services, pulls `llama3.1` if needed, and starts uvicorn in the
+foreground. Qdrant vector data is preserved on the host under `qdrant/data`;
+Ollama model data is preserved under `ollama/data`.
 
 To run the chatbot in the background instead:
 
@@ -101,9 +102,10 @@ pip install -r requirements.txt
 The Makefile prefers `python3.12`, then `python3.11`, then `python3.10`. You
 can also override it explicitly, for example `make PYTHON=python3.11 ingest`.
 
-For the local LLM path, also start Ollama:
+For the local RAG and LLM paths, also start Qdrant and Ollama:
 
 ```bash
+make -C ../qdrant up MODE=docker
 make -C ../ollama up MODE=docker
 ```
 
@@ -159,7 +161,7 @@ Select a provider and model:
 
 ```bash
 python -m app.cli ask "Explain these Jenkins notes" --provider openai --model gpt-4.1-mini --force-llm
-python -m app.cli ask "Explain these Jenkins notes" --provider anthropic --model claude-3-5-sonnet-latest --force-llm
+python -m app.cli ask "Explain these Jenkins notes" --provider anthropic --model claude-sonnet-4-6 --force-llm
 python -m app.cli ask "Explain these Jenkins notes" --provider local --model llama3.1 --force-llm
 ```
 
@@ -915,8 +917,8 @@ cd chatbot
 make up MODE=docker
 ```
 
-This starts the sibling `ollama` service, pulls `llama3.1` if needed, and then
-starts chatbot plus Qdrant.
+This starts the sibling `qdrant` service, starts the sibling `ollama` service,
+pulls `llama3.1` if needed, and then starts the chatbot.
 
 For foreground Docker Compose output:
 
@@ -928,6 +930,7 @@ Manual equivalent:
 
 ```bash
 cd chatbot
+make -C ../qdrant up MODE=docker
 make -C ../ollama up MODE=docker
 docker compose up --build
 ```
@@ -947,15 +950,22 @@ docker compose exec chatbot python -m app.cli ingest sample_docs --reset
 The standalone compose file starts:
 
 - `chatbot`
-- `qdrant`
 
 The chatbot Makefile also starts:
 
+- `qdrant`
 - `ollama`
 
-The chatbot remains useful if Qdrant or a local LLM is not available: exact rules,
-pattern rules, whitelisted tools, configured local-file mode, configured SQLite
-sources, and SQLite chunk retrieval still work.
+The standalone Qdrant service can also be started directly:
+
+```bash
+cd qdrant
+make up MODE=docker
+```
+
+The chatbot remains useful if Qdrant or a local LLM is not available: exact
+rules, pattern rules, whitelisted tools, configured local-file mode, configured
+SQLite sources, and SQLite chunk retrieval still work.
 
 ## Optional Local LLM
 
@@ -985,6 +995,20 @@ http://playground-ollama:11434/api/chat
 The Docker chatbot and Docker Ollama services use the shared Docker network
 `playground-llm`, which avoids accidentally talking to a host-installed Ollama
 on the same port.
+
+The Docker chatbot and Docker Qdrant services use the shared Docker network
+`playground-vector`. In Docker chatbot mode, `QDRANT_URL` defaults to:
+
+```text
+http://playground-qdrant:6333
+```
+
+On the host, the playground Qdrant service is exposed through `QDRANT_URL`,
+which defaults to:
+
+```text
+http://127.0.0.1:6333
+```
 
 The bare-mode chatbot Makefile points at the playground Ollama Docker service on
 `OLLAMA_URL`, which defaults to `http://127.0.0.1:11435`. This keeps it
@@ -1170,7 +1194,7 @@ No Python code changes are needed for these integrations.
 ## Compose Extension Example
 
 In a larger playground compose file, add the chatbot service and point it at the
-same network as the other services:
+same networks as the other services and the standalone Qdrant service:
 
 ```yaml
 services:
@@ -1180,7 +1204,7 @@ services:
       - "8088:8088"
     environment:
       CHATBOT_CONFIG: /app/config/config.yml
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: http://playground-qdrant:6333
       JENKINS_URL: http://jenkins:8080
       GITEA_URL: http://gitea:3000
       NEXUS_URL: http://nexus:8081
@@ -1188,15 +1212,15 @@ services:
       - ./chatbot/config:/app/config:ro
       - ./chatbot/sample_docs:/app/sample_docs:ro
       - chatbot-data:/app/data
-
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    volumes:
-      - qdrant-data:/qdrant/storage
+    networks:
+      - playground-vector
 
 volumes:
   chatbot-data:
-  qdrant-data:
+
+networks:
+  playground-vector:
+    external: true
 ```
 
 Then reference those environment variables from `config/config.yml`:

@@ -6,12 +6,12 @@ MAKEFILE_DIR := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
 
 MODE ?= docker
 
-SERVICES := vault gitea gitlab nexus api jenkins nginx ollama chatbot
+SERVICES := vault gitea gitlab nexus api jenkins nginx qdrant ollama chatbot n8n
 START_ORDER := $(SERVICES)
-STOP_ORDER := chatbot ollama nginx jenkins api nexus gitlab gitea vault
-DEVOPS_ORDER := vault nexus api gitea jenkins nginx ollama chatbot
-DEVOPS_STOP_ORDER := chatbot ollama nginx jenkins gitea api nexus vault
-DISTCLEAN_ORDER := chatbot ollama nginx jenkins api nexus gitlab gitea vault
+STOP_ORDER := n8n chatbot ollama qdrant nginx jenkins api nexus gitlab gitea vault
+DEVOPS_ORDER := vault nexus api gitea jenkins nginx qdrant ollama chatbot n8n
+DEVOPS_STOP_ORDER := n8n chatbot ollama qdrant nginx jenkins gitea api nexus vault
+DISTCLEAN_ORDER := n8n chatbot ollama qdrant nginx jenkins api nexus gitlab gitea vault
 
 .PHONY: help all up down start stop restart status \
 	devops devops-up devops-down devops-stop \
@@ -30,8 +30,8 @@ help:
 	@echo "  make down MODE=docker|bare     # stop all services in reverse order"
 	@echo "  make start MODE=docker|bare    # alias for up"
 	@echo "  make stop MODE=docker|bare     # alias for down"
-	@echo "  make devops MODE=docker|bare   # start vault,nexus,api,gitea,jenkins,nginx,ollama,chatbot"
-	@echo "  make devops-down MODE=docker|bare # stop chatbot,ollama,nginx,jenkins,gitea,api,nexus,vault"
+	@echo "  make devops MODE=docker|bare   # start vault,nexus,api,gitea,jenkins,nginx,qdrant,ollama,chatbot"
+	@echo "  make devops-down MODE=docker|bare # stop chatbot,ollama,qdrant,nginx,jenkins,gitea,api,nexus,vault"
 	@echo "  make distclean                 # remove generated deployment artifacts"
 	@echo "  make distclan                  # alias for distclean"
 	@echo "  make status                    # show status for all services"

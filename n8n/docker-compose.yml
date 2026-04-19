@@ -1,0 +1,129 @@
+services:
+  n8n:
+    image: n8nio/n8n:${N8N_IMAGE_TAG:-latest}
+    #image: docker.n8n.io/n8nio/n8n:${N8N_IMAGE_TAG:-latest}
+    container_name: playground-n8n
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: http://localhost:${N8N_PORT:-5678}
+      N8N_EDITOR_BASE_URL: http://localhost:${N8N_PORT:-5678}
+      GENERIC_TIMEZONE: ${N8N_TIMEZONE:-Europe/Berlin}
+      N8N_USER_FOLDER: /home/node/.n8n
+      # NODES_EXCLUDE: '["n8n-nodes-base.executeCommand", "n8n-nodes-base.readWriteFile"]'
+
+      # External task runners
+      N8N_RUNNERS_ENABLED: "true"
+      N8N_RUNNERS_MODE: external
+      N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+      # N8N_RUNNERS_BROKER_LISTEN_ADDRESS: "127.0.0.1"
+      N8N_RUNNERS_BROKER_PORT: ${N8N_RUNNERS_BROKER_PORT:-5679}
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN:-playground-runner-secret}
+      N8N_NATIVE_PYTHON_RUNNER: "true"
+
+      N8N_SECURE_COOKIE: "false"
+      # NODE_EXTRA_CA_CERTS: /certs/localhost_cert.pem
+      # N8N_SSL_CERT: /certs/localhost_cert.pem
+      # N8N_SSL_KEY: /certs/localhost_cert.key
+
+      # Telemetry / phone-home off
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      EXTERNAL_FRONTEND_HOOKS_URLS: ""
+      N8N_DIAGNOSTICS_CONFIG_FRONTEND: ""
+      N8N_DIAGNOSTICS_CONFIG_BACKEND: ""
+
+      # Filesystem access for Code nodes and file operations
+      N8N_BLOCK_FS_WRITE_ACCESS: "false"
+      N8N_BLOCK_FS_READ_ACCESS: "false"
+
+      # Community packages
+      N8N_COMMUNITY_PACKAGES_ALLOW_UNVERIFIED: "true"
+
+      # Proxy (uncomment and adjust if behind a corporate proxy)
+      # HTTP_PROXY: "http://proxy.example:4711"
+      # HTTPS_PROXY: "http://proxy.example:4711"
+      # NO_PROXY: "localhost,127.0.0.1,::1,n8n,task-runner,host.docker.internal"
+      # http_proxy: "http://proxy.example:4711"
+      # https_proxy: "http://proxy.example:4711"
+      # no_proxy: "localhost,127.0.0.1,::1,n8n,task-runner,host.docker.internal"
+
+      # Logging
+      N8N_LOG_LEVEL: debug
+      N8N_LOG_OUTPUT: "console,file"
+      N8N_LOG_FILE_LOCATION: /home/node/.n8n/logs/n8n-main.log
+      N8N_LOG_FILE_SIZE_MAX: 50
+      N8N_LOG_FILE_COUNT_MAX: 200
+
+      # Health / metrics
+      N8N_METRICS: "true"
+      QUEUE_HEALTH_CHECK_ACTIVE: "true"
+
+      # SMTP (uncomment to enable outbound email)
+      # N8N_EMAIL_MODE: smtp
+      # N8N_SMTP_HOST: ""
+      # N8N_SMTP_PORT: 587
+      # N8N_SMTP_USER: ""
+      # N8N_SMTP_PASS: ""
+      # N8N_SMTP_SENDER: ""
+      # N8N_SMTP_SSL: "false"
+      # N8N_SMTP_TLS: "true"
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./local-files:/files
+      - ./certs:/certs
+    networks:
+      - n8n-internal
+      - playground-vector
+
+  task-runner:
+    image: n8nio/runners:${N8N_RUNNERS_IMAGE_TAG:-latest}
+    container_name: playground-n8n-runner
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      N8N_RUNNERS_TASK_BROKER_URI: http://n8n:${N8N_RUNNERS_BROKER_PORT:-5679}
+      N8N_RUNNERS_AUTH_TOKEN: ${N8N_RUNNERS_AUTH_TOKEN:-playground-runner-secret}
+      N8N_RUNNERS_MAX_CONCURRENCY: 5
+      N8N_RUNNERS_AUTO_SHUTDOWN_TIMEOUT: 30
+      EXECUTIONS_MODE: queue
+
+      # Proxy (uncomment and adjust if behind a corporate proxy)
+      # HTTP_PROXY: "http://proxy.example:4711"
+      # HTTPS_PROXY: "http://proxy.example:4711"
+      # NO_PROXY: "localhost,127.0.0.1,::1,n8n,task-runner"
+      # http_proxy: "http://proxy.example:4711"
+      # https_proxy: "http://proxy.example:4711"
+      # no_proxy: "localhost,127.0.0.1,::1,n8n,task-runner"
+
+      # Logging
+      N8N_LOG_LEVEL: debug
+      N8N_LOG_OUTPUT: "console,file"
+      N8N_LOG_FILE_LOCATION: /home/node/.n8n/logs/n8n-runner.log
+      N8N_LOG_FILE_SIZE_MAX: 50
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - ./local-files:/files
+      - ./certs:/certs
+    networks:
+      - n8n-internal
+      - playground-vector
+    depends_on:
+      - n8n
+
+volumes:
+  n8n-data:
+
+networks:
+  n8n-internal:
+    driver: bridge
+  playground-vector:
+    external: true

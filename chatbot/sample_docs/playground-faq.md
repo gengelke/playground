@@ -50,6 +50,7 @@ The playground currently contains these top-level service components:
 - `api`
 - `jenkins`
 - `nginx`
+- `qdrant`
 - `ollama`
 - `chatbot`
 
@@ -61,13 +62,13 @@ Makefile can orchestrate all services or start and stop individual services.
 `make all MODE=docker` starts every service in the playground:
 
 ```text
-vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> ollama -> chatbot
+vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> qdrant -> ollama -> chatbot
 ```
 
 `make devops MODE=docker` starts the smaller DevOps scenario subset:
 
 ```text
-vault -> nexus -> api -> gitea -> jenkins -> nginx -> ollama -> chatbot
+vault -> nexus -> api -> gitea -> jenkins -> nginx -> qdrant -> ollama -> chatbot
 ```
 
 The DevOps scenario intentionally does not start `gitlab`. Use `make all` or
@@ -111,7 +112,7 @@ make logs-vault MODE=docker
 The same pattern exists for all services:
 
 ```text
-vault gitea gitlab nexus api jenkins nginx ollama chatbot
+vault gitea gitlab nexus api jenkins nginx qdrant ollama chatbot
 ```
 
 Examples:
@@ -391,6 +392,43 @@ Common usage:
 
 ```bash
 cd nginx
+make up MODE=docker
+make status MODE=docker
+make logs MODE=docker
+make down MODE=docker
+```
+
+## What does the Qdrant service do?
+
+The `qdrant` service provides a local Qdrant vector database. It is the vector
+storage component used by the chatbot's Qdrant RAG profiles, and it can also be
+used independently by other playground experiments.
+
+The Qdrant service keeps collections on the host under:
+
+```text
+qdrant/data
+```
+
+That host directory is mounted into the container as `/qdrant/storage`, so
+collections survive container restarts and container recreation.
+
+Default host URL:
+
+```text
+http://127.0.0.1:6333
+```
+
+Docker chatbot integration URL:
+
+```text
+http://playground-qdrant:6333
+```
+
+Common usage:
+
+```bash
+cd qdrant
 make up MODE=docker
 make status MODE=docker
 make logs MODE=docker

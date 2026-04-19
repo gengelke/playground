@@ -6,7 +6,7 @@ services:
       - "${CHATBOT_PORT:-8088}:8088"
     environment:
       CHATBOT_CONFIG: /app/config/config.yml
-      QDRANT_URL: http://qdrant:6333
+      QDRANT_URL: ${QDRANT_URL:-http://playground-qdrant:6333}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://playground-ollama:11434/api/chat}
       OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embed}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -21,26 +21,18 @@ services:
       - ./sample_docs:/app/sample_docs:ro
       - ../api/graphql-library/generated:/api/graphql-library/generated:ro
       - chatbot-data:/app/data
-    depends_on:
-      - qdrant
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - default
       - playground-llm
-
-  qdrant:
-    image: qdrant/qdrant:v1.12.4
-    container_name: local-chatbot-qdrant
-    ports:
-      - "${QDRANT_PORT:-6333}:6333"
-    volumes:
-      - qdrant-data:/qdrant/storage
+      - playground-vector
 
 volumes:
   chatbot-data:
-  qdrant-data:
 
 networks:
   playground-llm:
+    external: true
+  playground-vector:
     external: true

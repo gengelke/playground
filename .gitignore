@@ -81,6 +81,10 @@ api/graphql-library/generated/
 api/graphql-library/dist/
 api/graphql-library/*.egg-info/
 chatbot/data/
+n8n/local-files/*
+!n8n/local-files/.gitkeep
+n8n/certs/*
+!n8n/certs/.gitkeep
 gitea/runtime/
 gitea/.gitea/
 gitlab/.env
@@ -93,6 +97,7 @@ nginx/.state/
 nginx/certs/
 nginx/runtime/
 ollama/data/
+qdrant/data/
 vault/.vault/
 
 # =========================

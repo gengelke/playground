@@ -1,0 +1,15 @@
+services:
+  qdrant:
+    image: qdrant/qdrant:${QDRANT_IMAGE_TAG:-v1.12.4}
+    container_name: playground-qdrant
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - ./data:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - playground-vector
+
+networks:
+  playground-vector:
+    external: true

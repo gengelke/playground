@@ -26,8 +26,14 @@ OLLAMA_DIR ?= $(ROOT_DIR)/ollama
 OLLAMA_MODE ?= docker
 OLLAMA_MODEL ?= llama3.1
 OLLAMA_EMBED_MODEL ?= nomic-embed-text
+QDRANT_PORT ?= 6333
+QDRANT_URL ?= http://127.0.0.1:$(QDRANT_PORT)
+QDRANT_DIR ?= $(ROOT_DIR)/qdrant
+QDRANT_MODE ?= docker
 CHATBOT_START_OLLAMA ?= true
 CHATBOT_STOP_OLLAMA ?= true
+CHATBOT_START_QDRANT ?= true
+CHATBOT_STOP_QDRANT ?= true
 DOCKER_COMPOSE ?= docker compose -f docker-compose.yml
 
 VENV_DIR ?= $(MAKEFILE_DIR).venv
@@ -52,7 +58,7 @@ PID_FILE ?= $(BARE_STATE_DIR)/chatbot.pid
 LOG_FILE ?= $(BARE_STATE_DIR)/chatbot.log
 
 .PHONY: help build up down restart logs status run test ingest clean distclean \
-	check-mode venv deps ensure-ollama stop-ollama \
+	check-mode venv deps ensure-ollama stop-ollama ensure-qdrant stop-qdrant \
 	docker-build docker-up docker-run docker-down docker-logs docker-status \
 	bare-build bare-up bare-down bare-logs bare-status
 
@@ -87,6 +93,16 @@ ifeq ($(CHATBOT_STOP_OLLAMA),true)
 	@$(MAKE) -C "$(OLLAMA_DIR)" down MODE="$(OLLAMA_MODE)"
 endif
 
+ensure-qdrant:
+ifeq ($(CHATBOT_START_QDRANT),true)
+	@$(MAKE) -C "$(QDRANT_DIR)" up MODE="$(QDRANT_MODE)"
+endif
+
+stop-qdrant:
+ifeq ($(CHATBOT_STOP_QDRANT),true)
+	@$(MAKE) -C "$(QDRANT_DIR)" down MODE="$(QDRANT_MODE)"
+endif
+
 build: check-mode
 	@$(MAKE) $(MODE)-build MODE="$(MODE)"
 
@@ -106,8 +122,8 @@ logs: check-mode
 status: check-mode
 	@$(MAKE) $(MODE)-status MODE="$(MODE)"
 
-run: deps ensure-ollama
-	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" \
+run: deps ensure-ollama ensure-qdrant
+	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" QDRANT_URL="$(QDRANT_URL)" \
 		"$(UVICORN)" app.main:app --host "$(CHATBOT_HOST)" --port "$(CHATBOT_PORT)"
 
 test: deps
@@ -118,7 +134,7 @@ ingest: deps
 		echo "Usage: make ingest PATHS='sample_docs [more paths]' [PROFILES='sqlite,qdrant_local_hash']"; \
 		exit 1; \
 	fi
-	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" \
+	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" QDRANT_URL="$(QDRANT_URL)" \
 		"$(VENV_PYTHON)" -m app.cli ingest $(PATHS) $(if $(PROFILES),--profiles "$(PROFILES)",)
 
 docker-build:
@@ -126,7 +142,8 @@ docker-build:
 
 docker-up:
 	@$(MAKE) ensure-ollama
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build -d
+	@$(MAKE) ensure-qdrant
+	@CHATBOT_PORT="$(CHATBOT_PORT)" QDRANT_URL="http://playground-qdrant:6333" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build -d
 	@for _ in $$(seq 1 30); do \
 		if curl -fsS "$(CHATBOT_URL)/health" >/dev/null 2>&1; then \
 			echo "Chatbot is ready at $(CHATBOT_URL)"; \
@@ -140,22 +157,25 @@ docker-up:
 
 docker-run:
 	@$(MAKE) ensure-ollama
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build
+	@$(MAKE) ensure-qdrant
+	@CHATBOT_PORT="$(CHATBOT_PORT)" QDRANT_URL="http://playground-qdrant:6333" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) up --build
 
 docker-down:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) down
+	@CHATBOT_PORT="$(CHATBOT_PORT)" QDRANT_URL="http://playground-qdrant:6333" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) down
+	@$(MAKE) stop-qdrant
 	@$(MAKE) stop-ollama
 
 docker-logs:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) logs -f --tail=100 chatbot qdrant
+	@CHATBOT_PORT="$(CHATBOT_PORT)" QDRANT_URL="http://playground-qdrant:6333" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) logs -f --tail=100 chatbot
 
 docker-status:
-	@CHATBOT_PORT="$(CHATBOT_PORT)" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) ps
+	@CHATBOT_PORT="$(CHATBOT_PORT)" QDRANT_URL="http://playground-qdrant:6333" LOCAL_LLM_URL="http://playground-ollama:11434/api/chat" OLLAMA_EMBED_URL="http://playground-ollama:11434/api/embed" $(DOCKER_COMPOSE) ps
 
 bare-build: deps
 
 bare-up: bare-build
 	@$(MAKE) ensure-ollama
+	@$(MAKE) ensure-qdrant
 	@mkdir -p "$(BARE_STATE_DIR)"
 	@if [[ -f "$(PID_FILE)" ]]; then \
 		pid="$$(cat "$(PID_FILE)" 2>/dev/null || true)"; \
@@ -171,6 +191,7 @@ bare-up: bare-build
 	fi
 	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" \
 		OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" \
+		QDRANT_URL="$(QDRANT_URL)" \
 		nohup "$(UVICORN)" app.main:app --host "$(CHATBOT_HOST)" --port "$(CHATBOT_PORT)" \
 		>"$(LOG_FILE)" 2>&1 & echo $$! >"$(PID_FILE)"
 	@for _ in $$(seq 1 30); do \
@@ -185,6 +206,7 @@ bare-up: bare-build
 	exit 1
 
 bare-down:
+	@$(MAKE) stop-qdrant
 	@$(MAKE) stop-ollama
 	@pid="$$(cat "$(PID_FILE)" 2>/dev/null || true)"; \
 	if [[ -n "$$pid" ]] && ! kill -0 "$$pid" 2>/dev/null; then \
@@ -262,7 +284,9 @@ help:
 		"  OLLAMA_URL=$(OLLAMA_URL)" \
 		"  LOCAL_LLM_URL=$(LOCAL_LLM_URL)" \
 		"  OLLAMA_EMBED_URL=$(OLLAMA_EMBED_URL)" \
+		"  QDRANT_URL=$(QDRANT_URL)" \
 		"  CHATBOT_START_OLLAMA=$(CHATBOT_START_OLLAMA)" \
+		"  CHATBOT_START_QDRANT=$(CHATBOT_START_QDRANT)" \
 		"  OLLAMA_MODEL=$(OLLAMA_MODEL)" \
 		"  OLLAMA_EMBED_MODEL=$(OLLAMA_EMBED_MODEL)" \
 		"  LOG_FILE=$(LOG_FILE)"
