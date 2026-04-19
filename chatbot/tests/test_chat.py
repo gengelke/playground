@@ -3,11 +3,12 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import app.ingest as ingest_module
 from app.chat import ChatService
 from app.ingest import ingest_paths
 from app.llm import selected_provider_model
 from app.models import ChatRequest, LLMResult
-from app.retrieval import search_qdrant
+from app.retrieval import search_qdrant, search_sqlite_chunks, tokenize
 
 
 def base_config(tmp_path: Path) -> dict:
@@ -110,6 +111,36 @@ def test_ingestion_skips_editor_files(tmp_path: Path) -> None:
     assert skipped_paths == {".note.md.swp", ".note.md.un~"}
 
 
+def test_pdf_ingestion_prepares_markdown_and_ingests_it(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    config["documents"]["prepared_path"] = "data/uploads/prepared"
+    config["documents"]["pdf_section_chars"] = 1000
+    config["documents"]["pdf_min_section_chars"] = 100
+    pdf_path = tmp_path / "book.pdf"
+    pdf_path.write_bytes(b"%PDF-test")
+
+    def fake_extract_pdf_pages(path: Path):
+        return [
+            ingest_module.PdfPageText(1, "Book Title\n\nChapter 1 Introduction\n\nDevOps playground basics.\n\n1"),
+            ingest_module.PdfPageText(2, "Book Title\n\nChapter 2 Commands\n\nUse make up-chatbot MODE=docker.\n\n2"),
+        ]
+
+    monkeypatch.setattr(ingest_module, "extract_pdf_pages", fake_extract_pdf_pages)
+
+    result = ingest_paths(config, ["book.pdf"], reset=True)
+
+    assert result["prepared"][0]["source"] == "book.pdf"
+    assert result["prepared"][0]["pages"] == 2
+    assert result["prepared"][0]["sections"] >= 1
+    assert result["ingested"][0]["path"].startswith("data/uploads/prepared/book/")
+    prepared_files = [tmp_path / path for path in result["prepared"][0]["prepared_files"]]
+    assert all(path.exists() for path in prepared_files)
+    prepared_text = "\n".join(path.read_text(encoding="utf-8") for path in prepared_files)
+    assert "Source PDF: book.pdf" in prepared_text
+    assert "Use make up-chatbot MODE=docker." in prepared_text
+    assert "Book Title" not in prepared_text
+
+
 def test_direct_question_gets_answer_from_llm_with_rag_context(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
@@ -184,6 +215,23 @@ def test_qdrant_search_ignores_too_short_queries(tmp_path: Path) -> None:
     }
 
     assert search_qdrant(config, "x") == []
+
+
+def test_tokenizer_splits_uploaded_file_names() -> None:
+    assert tokenize("data/uploads/python_leitfaden.txt") == ["data", "uploads", "python", "leitfaden", "txt"]
+
+
+def test_sqlite_search_uses_source_path_tokens(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "python_leitfaden.txt").write_text("Dieses Dokument beschreibt Grundlagen.", encoding="utf-8")
+    ingest_paths(config, ["docs"], reset=True)
+
+    chunks = search_sqlite_chunks(config, "python leitfaden")
+
+    assert chunks
+    assert chunks[0].source_path == "docs/python_leitfaden.txt"
 
 
 def test_force_llm_without_rag_does_not_add_sqlite_context(tmp_path: Path) -> None:

@@ -78,6 +78,7 @@ api/graphql-library/build/
 api/graphql-library/generated/
 api/graphql-library/dist/
 api/graphql-library/*.egg-info/
+chatbot/data/
 gitea/runtime/
 gitea/.gitea/
 gitlab/.env

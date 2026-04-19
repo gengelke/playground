@@ -75,15 +75,15 @@ def run_configured_tool(config: dict[str, Any], message: str) -> dict[str, Any] 
     return None
 
 
-def search_local_files(config: dict[str, Any], message: str) -> dict[str, Any] | None:
+def search_local_files(config: dict[str, Any], message: str, require_match: bool = True) -> dict[str, Any] | None:
     for source in config.get("local_files", []):
         if source.get("enabled") is False:
             continue
-        if not first_match(message, source.get("match", {}).get("exact"), source.get("match", {}).get("patterns")):
+        if require_match and not first_match(message, source.get("match", {}).get("exact"), source.get("match", {}).get("patterns")):
             continue
 
         path = resolve_path(config, source.get("path", ""))
-        files = [path]
+        files = [path] if path.is_file() else []
         if path.is_dir():
             files = [item for item in path.rglob("*") if item.is_file()]
 
@@ -215,4 +215,3 @@ def try_json(text: str) -> Any:
         return json.loads(text)
     except Exception:
         return text
-

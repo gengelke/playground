@@ -90,6 +90,18 @@ local_files:
         - "vault"
         - "nginx"
         - "ports"
+  - name: prepared_uploads
+    enabled: true
+    path: data/uploads/prepared
+    max_files: 30
+    max_chars: 1600
+    match:
+      patterns:
+        - "uploaded"
+        - "pdf"
+        - "ebook"
+        - "book"
+        - "document"
 
 sqlite_sources:
   - name: example_playground_sqlite
@@ -122,6 +134,9 @@ documents:
   min_query_chars: 4
   min_query_tokens: 2
   min_score: 0.25
+  prepared_path: data/uploads/prepared
+  pdf_section_chars: 5000
+  pdf_min_section_chars: 1200
 
 qdrant:
   enabled: true

@@ -71,7 +71,7 @@ class ChatService:
             )
 
         if request.use_local_files:
-            local_file_result = search_local_files(self.config, message)
+            local_file_result = search_local_files(self.config, message, require_match=False)
             if local_file_result:
                 return ChatResponse(
                     answer=format_file_answer(local_file_result),

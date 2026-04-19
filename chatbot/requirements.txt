@@ -5,4 +5,5 @@ PyYAML==6.0.2
 requests==2.32.3
 qdrant-client==1.12.1
 python-multipart==0.0.20
+pypdf==5.1.0
 pytest==8.3.4

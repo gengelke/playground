@@ -12,7 +12,7 @@ from app.config import resolve_path
 from app.models import RetrievedChunk
 
 
-TOKEN_RE = re.compile(r"[A-Za-z0-9_\-äöüÄÖÜß]+")
+TOKEN_RE = re.compile(r"[A-Za-z0-9äöüÄÖÜß]+")
 DEFAULT_VECTOR_SIZE = 96
 DEFAULT_MIN_QUERY_TOKENS = 2
 DEFAULT_MIN_QUERY_CHARS = 4
@@ -20,7 +20,7 @@ DEFAULT_QDRANT_MIN_SCORE = 0.2
 
 
 def tokenize(text: str) -> list[str]:
-    return [token.lower() for token in TOKEN_RE.findall(text)]
+    return [token.lower() for token in TOKEN_RE.findall(text.replace("_", " ").replace("-", " "))]
 
 
 def embed_text(text: str, size: int = DEFAULT_VECTOR_SIZE) -> list[float]:
@@ -97,17 +97,20 @@ def search_sqlite_chunks(config: dict[str, Any], query: str, limit: int | None =
 
     with sqlite3.connect(sqlite_path(config)) as conn:
         conn.row_factory = sqlite3.Row
-        rows = conn.execute("SELECT id, source_path, chunk_index, text FROM chunks").fetchall()
+        rows = conn.execute("SELECT id, source_path, title, chunk_index, text FROM chunks").fetchall()
 
     scored: list[RetrievedChunk] = []
     for row in rows:
         text_tokens = set(tokenize(row["text"]))
-        if not text_tokens:
+        metadata_tokens = set(tokenize(f"{row['source_path']} {row['title'] or ''}"))
+        searchable_tokens = text_tokens | metadata_tokens
+        if not searchable_tokens:
             continue
-        overlap = len(query_tokens & text_tokens)
-        if overlap == 0:
+        text_overlap = len(query_tokens & text_tokens)
+        metadata_overlap = len(query_tokens & metadata_tokens)
+        if text_overlap == 0 and metadata_overlap == 0:
             continue
-        score = overlap / max(len(query_tokens), 1)
+        score = (text_overlap + metadata_overlap) / max(len(query_tokens), 1)
         if score < min_score:
             continue
         scored.append(
@@ -183,10 +186,11 @@ def upsert_qdrant_chunks(config: dict[str, Any], chunk_ids: list[int], source_pa
         client = get_qdrant_client(config)
         points = []
         for chunk_id, text in zip(chunk_ids, chunks):
+            embedding_text = f"{source_path}\n{text}"
             points.append(
                 PointStruct(
                     id=chunk_id,
-                    vector=embed_text(text, size=size),
+                    vector=embed_text(embedding_text, size=size),
                     payload={"text": text, "source_path": source_path, "chunk_id": chunk_id},
                 )
             )
