@@ -492,6 +492,47 @@ def test_local_files_mode_ignores_stopwords_when_selecting_excerpt(tmp_path: Pat
     assert "educational repository" not in response.answer
 
 
+def test_local_files_mode_ranks_across_multiple_sources(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    sample_docs = tmp_path / "sample_docs"
+    uploads = tmp_path / "uploads"
+    sample_docs.mkdir()
+    uploads.mkdir()
+    (sample_docs / "playground-faq.md").write_text(
+        "You can also work inside a service directory.",
+        encoding="utf-8",
+    )
+    (uploads / "ai-notes.md").write_text(
+        "Directory embeddings support semantic retrieval.",
+        encoding="utf-8",
+    )
+    config["local_files"] = [
+        {
+            "name": "sample_docs",
+            "enabled": True,
+            "path": "sample_docs",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["playground", "faq"]},
+        },
+        {
+            "name": "prepared_uploads",
+            "enabled": True,
+            "path": "uploads",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["ai", "uploaded", "document"]},
+        },
+    ]
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="directory embeddings retrieval", use_rag=False, use_local_files=True))
+
+    assert response.source == "local_file"
+    assert "Directory embeddings support semantic retrieval" in response.answer
+    assert "You can also work inside a service directory" not in response.answer
+
+
 def test_local_files_retrieval_profile_returns_file_answer_without_llm(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"

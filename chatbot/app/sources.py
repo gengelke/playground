@@ -124,6 +124,10 @@ def configured_tool_commands(config: dict[str, Any]) -> list[str]:
 
 
 def search_local_files(config: dict[str, Any], message: str, require_match: bool = True) -> dict[str, Any] | None:
+    candidates = []
+    matched_source_names: list[str] = []
+    global_match_limit = 1
+
     for source in config.get("local_files", []):
         if source.get("enabled") is False:
             continue
@@ -143,15 +147,36 @@ def search_local_files(config: dict[str, Any], message: str, require_match: bool
                 continue
             excerpt, score = best_excerpt_with_score(text, message, int(source.get("max_chars", 1200)))
             if excerpt:
-                excerpts.append({"path": str(file_path), "text": excerpt, "score": score})
+                excerpts.append(
+                    {
+                        "path": str(file_path),
+                        "text": excerpt,
+                        "score": score,
+                        "source_name": source.get("name"),
+                    }
+                )
         if excerpts:
+            matched_source_names.append(str(source.get("name")))
             excerpts.sort(key=lambda item: item["score"], reverse=True)
-            best_score = excerpts[0]["score"]
-            minimum_score = max(1.0, best_score * 0.5)
-            max_matches = int(source.get("max_matches", source.get("max_files", 10)))
-            excerpts = [item for item in excerpts if item["score"] >= minimum_score][:max_matches]
-            return {"name": source.get("name"), "matches": excerpts}
-    return None
+            source_best_score = excerpts[0]["score"]
+            source_minimum_score = max(1.0, source_best_score * 0.5)
+            source_match_limit = int(source.get("max_matches", source.get("max_files", 10)))
+            global_match_limit = max(global_match_limit, source_match_limit)
+            candidates.extend([item for item in excerpts if item["score"] >= source_minimum_score][:source_match_limit])
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    best_score = candidates[0]["score"]
+    minimum_score = max(1.0, best_score * 0.5)
+    matches = [item for item in candidates if item["score"] >= minimum_score][:global_match_limit]
+    unique_source_names = list(dict.fromkeys(matched_source_names))
+    return {
+        "name": unique_source_names[0] if len(unique_source_names) == 1 else "multiple",
+        "source_names": unique_source_names,
+        "matches": matches,
+    }
 
 
 def query_configured_sqlite(config: dict[str, Any], message: str) -> dict[str, Any] | None:

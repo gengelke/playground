@@ -260,9 +260,15 @@ def should_call_llm(message: str, request: ChatRequest) -> bool:
 
 
 def format_file_answer(result: dict[str, Any]) -> str:
-    lines = [f"Local file source: {result.get('name')}"]
+    source_names = result.get("source_names") or [result.get("name")]
+    if len(source_names) == 1:
+        lines = [f"Local file source: {source_names[0]}"]
+    else:
+        lines = [f"Local file sources: {', '.join(source_names)}"]
     for match in result.get("matches", []):
-        lines.append(f"\n{match.get('path')}:\n{match.get('text')}")
+        source_name = match.get("source_name")
+        prefix = f"\n[{source_name}]\n" if len(source_names) > 1 and source_name else "\n"
+        lines.append(f"{prefix}{match.get('path')}:\n{match.get('text')}")
     return "\n".join(lines).strip()
 
 
