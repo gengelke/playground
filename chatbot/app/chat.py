@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from app.auth import command_auth_status
 from app.config import load_config
 from app.history import record_chat
 from app.llm import call_llm, selected_provider_model
@@ -19,6 +20,7 @@ from app.sources import (
     search_local_files,
     search_web,
     static_question_answer,
+    tool_message_body,
 )
 
 
@@ -83,6 +85,42 @@ class ChatService:
                 metadata={"pattern": pattern_rule.get("pattern")},
             ))
 
+        tool_message = tool_message_body(message)
+        if tool_message is not None:
+            auth_status = command_auth_status(self.config, request.command_token)
+            if not auth_status["authorized"]:
+                return self.finalize_response(request, ChatResponse(
+                    answer="Authentication is required to execute Simon says commands.",
+                    source="auth",
+                    metadata={
+                        "command_requested": True,
+                        "reason": auth_status.get("reason"),
+                        "token_env": auth_status.get("token_env"),
+                    },
+                ))
+
+            tool_result = run_configured_tool(self.config, message)
+            if tool_result:
+                if tool_result.get("error"):
+                    return self.finalize_response(request, ChatResponse(
+                        answer=f"Configured tool '{tool_result.get('name')}' failed: {tool_result.get('error')}",
+                        source="tool",
+                        tool=tool_result.get("name"),
+                        metadata=tool_result,
+                    ))
+                return self.finalize_response(request, ChatResponse(
+                    answer=tool_result.get("output") or "(tool returned no output)",
+                    source="tool",
+                    tool=tool_result.get("name"),
+                    metadata=tool_result,
+                ))
+
+            return self.finalize_response(request, ChatResponse(
+                answer="No configured Simon says command matched this request.",
+                source="tool_empty",
+                metadata={"command_requested": True, "tool_message": tool_message},
+            ))
+
         if request.use_local_files:
             local_file_result = search_local_files(self.config, message, require_match=False)
             if local_file_result:
@@ -95,22 +133,6 @@ class ChatService:
                 answer="No relevant local file content found.",
                 source="local_file_empty",
                 metadata={"use_local_files": True},
-            ))
-
-        tool_result = run_configured_tool(self.config, message)
-        if tool_result:
-            if tool_result.get("error"):
-                return self.finalize_response(request, ChatResponse(
-                    answer=f"Configured tool '{tool_result.get('name')}' failed: {tool_result.get('error')}",
-                    source="tool",
-                    tool=tool_result.get("name"),
-                    metadata=tool_result,
-                ))
-            return self.finalize_response(request, ChatResponse(
-                answer=tool_result.get("output") or "(tool returned no output)",
-                source="tool",
-                tool=tool_result.get("name"),
-                metadata=tool_result,
             ))
 
         if not use_rag:
@@ -196,16 +218,17 @@ class ChatService:
         llm_started = time.perf_counter()
         llm_result = call_llm(self.config, message, provider=provider, model=model, context=context)
         llm_latency_ms = elapsed_ms(llm_started)
-        if rag_chunks and llm_result.metadata.get("error"):
+        if llm_result.metadata.get("error"):
             return self.finalize_response(request, ChatResponse(
-                answer=format_chunks(rag_chunks),
-                source="rag_context",
+                answer=llm_result.answer,
+                source="llm_error",
                 provider=llm_result.provider,
                 model=llm_result.model,
                 metadata={
-                    "llm": llm_result.metadata,
-                    "chunks": chunks_metadata(rag_chunks),
-                    "retrieval": retrieval_metadata,
+                    "llm": {**llm_result.metadata, "latency_ms": llm_latency_ms},
+                    "context": context,
+                    "chunks": chunks_metadata(rag_chunks) if rag_chunks else [],
+                    "retrieval": retrieval_metadata if use_rag else None,
                     "latency_ms": elapsed_ms(started),
                 },
             ))
@@ -232,6 +255,7 @@ class ChatService:
                     provider=request.provider,
                     model=request.model,
                     retrieval_profile=profile,
+                    command_token=request.command_token,
                     use_rag=True,
                     rag_only=True,
                     use_local_files=False,

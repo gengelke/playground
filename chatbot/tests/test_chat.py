@@ -4,10 +4,11 @@ import sys
 from pathlib import Path
 
 import app.ingest as ingest_module
+import requests
 from app.chat import ChatService
 from app.history import clear_history, list_history
 from app.ingest import ingest_paths
-from app.llm import selected_provider_model
+from app.llm import call_anthropic, selected_provider_model
 from app.models import ChatRequest, LLMResult
 from app.embeddings import embed_text
 from app.retrieval import concrete_ingest_profiles, search_qdrant, search_sqlite_chunks, tokenize
@@ -108,6 +109,30 @@ def test_configured_tool_can_receive_message_body(tmp_path: Path) -> None:
     assert response.answer == "echo body Erika Mustermann Developer"
     assert response.source == "tool"
     assert response.tool == "echo_body"
+
+
+def test_configured_tool_requires_token_when_command_auth_is_enabled(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    config["auth"] = {"command_auth_required": True, "command_token_env": "TEST_CHATBOT_COMMAND_TOKEN"}
+    monkeypatch.setenv("TEST_CHATBOT_COMMAND_TOKEN", "vip-secret")
+
+    response = ChatService(config).answer(ChatRequest(message="Simon says safe echo"))
+
+    assert response.source == "auth"
+    assert "Authentication is required" in response.answer
+    assert response.metadata["command_requested"] is True
+
+
+def test_configured_tool_accepts_valid_command_token(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    config["auth"] = {"command_auth_required": True, "command_token_env": "TEST_CHATBOT_COMMAND_TOKEN"}
+    monkeypatch.setenv("TEST_CHATBOT_COMMAND_TOKEN", "vip-secret")
+
+    response = ChatService(config).answer(ChatRequest(message="Simon says safe echo", command_token="vip-secret"))
+
+    assert response.answer == "safe output"
+    assert response.source == "tool"
+    assert response.tool == "echo_safe"
 
 
 def test_show_commands_lists_simon_says_commands(tmp_path: Path) -> None:
@@ -400,7 +425,7 @@ def test_force_llm_without_rag_does_not_add_sqlite_context(tmp_path: Path) -> No
     service = ChatService(config)
     response = service.answer(ChatRequest(message="Explain Jenkins REST status", use_rag=False, force_llm=True))
 
-    assert response.source == "none"
+    assert response.source == "llm_error"
     assert response.metadata["context"] == []
 
 
@@ -605,7 +630,7 @@ def test_local_files_and_rag_are_mutually_exclusive(tmp_path: Path) -> None:
     assert response.answer == "Choose either RAG or local files, not both."
 
 
-def test_rag_context_is_returned_if_llm_fails(tmp_path: Path) -> None:
+def test_llm_error_is_returned_instead_of_raw_rag_context(tmp_path: Path) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -615,8 +640,60 @@ def test_rag_context_is_returned_if_llm_fails(tmp_path: Path) -> None:
     service = ChatService(config)
     response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True))
 
-    assert response.source == "rag_context"
-    assert "Jenkins job status" in response.answer
+    assert response.source == "llm_error"
+    assert response.answer == "Local LLM provider is disabled."
+    assert response.metadata["llm"]["error"] == "provider_disabled"
+    assert "Jenkins job status" in response.metadata["context"][0]["text"]
+
+
+def test_anthropic_without_api_key_returns_llm_error_with_rag_context_metadata(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    config = base_config(tmp_path)
+    config["providers"]["anthropic"] = {
+        "default_model": "claude-test",
+        "api_key_env": "ANTHROPIC_API_KEY",
+    }
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.txt").write_text("Gordon Engelke is the author of the DevOps Playground.", encoding="utf-8")
+    ingest_paths(config, ["docs"], reset=True)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Who is the author?", provider="anthropic", use_rag=True))
+
+    assert response.source == "llm_error"
+    assert response.provider == "anthropic"
+    assert response.metadata["llm"]["error"] == "missing_api_key"
+    assert "Anthropic is selected" in response.answer
+    assert "Gordon Engelke" in response.metadata["context"][0]["text"]
+
+
+def test_anthropic_http_error_includes_response_body(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    config["providers"]["anthropic"] = {
+        "default_model": "claude-test",
+        "api_key_env": "ANTHROPIC_API_KEY",
+        "base_url": "https://api.anthropic.com/v1/messages",
+    }
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+
+    class FakeResponse:
+        status_code = 400
+        text = '{"error":{"type":"invalid_request_error","message":"bad request details"}}'
+
+        def raise_for_status(self):
+            raise requests.HTTPError("400 Client Error", response=self)
+
+        def json(self):
+            return {"error": {"type": "invalid_request_error", "message": "bad request details"}}
+
+    monkeypatch.setattr("app.llm.requests.post", lambda *args, **kwargs: FakeResponse())
+
+    result = call_anthropic(config, "hello", "claude-test")
+
+    assert result.metadata["status_code"] == 400
+    assert result.metadata["response_json"]["error"]["message"] == "bad request details"
+    assert "bad request details" in result.metadata["response_text"]
 
 
 def test_chat_uses_selected_sqlite_retrieval_profile(tmp_path: Path, monkeypatch) -> None:

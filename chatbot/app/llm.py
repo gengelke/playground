@@ -114,7 +114,7 @@ def call_openai(config: dict[str, Any], prompt: str, model: str) -> LLMResult:
         answer = data["choices"][0]["message"]["content"]
         return LLMResult(answer.strip(), "openai", model, {"base_url": base_url})
     except Exception as exc:
-        return LLMResult("OpenAI request failed.", "openai", model, {"error": str(exc), "base_url": base_url})
+        return LLMResult("OpenAI request failed.", "openai", model, request_error_metadata(exc, base_url))
 
 
 def call_anthropic(config: dict[str, Any], prompt: str, model: str) -> LLMResult:
@@ -144,4 +144,21 @@ def call_anthropic(config: dict[str, Any], prompt: str, model: str) -> LLMResult
         answer = "".join(part.get("text", "") for part in data.get("content", []) if part.get("type") == "text")
         return LLMResult(answer.strip(), "anthropic", model, {"base_url": base_url})
     except Exception as exc:
-        return LLMResult("Anthropic request failed.", "anthropic", model, {"error": str(exc), "base_url": base_url})
+        return LLMResult("Anthropic request failed.", "anthropic", model, request_error_metadata(exc, base_url))
+
+
+def request_error_metadata(exc: Exception, base_url: str) -> dict[str, Any]:
+    metadata: dict[str, Any] = {"error": str(exc), "base_url": base_url}
+    response = getattr(exc, "response", None)
+    if response is None:
+        return metadata
+
+    metadata["status_code"] = response.status_code
+    response_text = (response.text or "").strip()
+    if response_text:
+        metadata["response_text"] = response_text[:2000]
+    try:
+        metadata["response_json"] = response.json()
+    except ValueError:
+        pass
+    return metadata

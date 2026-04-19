@@ -136,6 +136,7 @@ python -m app.cli ask "How are you?"
 Whitelisted command:
 
 ```bash
+export CHATBOT_COMMAND_TOKEN='change-me-to-a-long-random-secret'
 python -m app.cli ask "Simon says get time"
 ```
 
@@ -187,6 +188,87 @@ curl -s http://localhost:8088/api/chat \
   -d '{"message":"How are you?"}' | jq
 ```
 
+Authenticated command execution:
+
+```bash
+curl -s http://localhost:8088/api/chat \
+  -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer ${CHATBOT_COMMAND_TOKEN}" \
+  -d '{"message":"Simon says get time"}' | jq
+```
+
+## VIP Command Token
+
+The chatbot has two different usage levels:
+
+- Public usage: normal questions, deterministic rules, RAG, local files, SQLite,
+  Qdrant, web search, and LLM-backed answers.
+- VIP usage: local command execution through configured `Simon says ...`
+  commands.
+
+Public usage does not require authentication. A user can ask questions through
+the web UI, REST API, or CLI without a token.
+
+VIP usage requires a bearer token because commands can interact with the host or
+with other playground services. This protects commands such as:
+
+- `Simon says get time`
+- `Simon says get statistics`
+- `Simon says get docs`
+- `Simon says get employees`
+- `Simon says add employee <name> <surname> <role>`
+- `Simon says delete employee <employeeId>`
+
+The sample config enables this command protection:
+
+```yaml
+auth:
+  command_auth_required: true
+  command_token_env: CHATBOT_COMMAND_TOKEN
+```
+
+Set the token in `chatbot/.env` for Docker Compose:
+
+```env
+CHATBOT_COMMAND_TOKEN=change-me-to-a-long-random-secret
+```
+
+Then restart the chatbot:
+
+```bash
+docker compose up --build -d
+```
+
+For the CLI, either export the same environment variable:
+
+```bash
+export CHATBOT_COMMAND_TOKEN='change-me-to-a-long-random-secret'
+python -m app.cli ask "Simon says get time"
+```
+
+or pass it directly:
+
+```bash
+python -m app.cli ask "Simon says get time" \
+  --command-token 'change-me-to-a-long-random-secret'
+```
+
+For REST, send the token as a bearer token:
+
+```bash
+curl -s http://localhost:8088/api/chat \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer change-me-to-a-long-random-secret' \
+  -d '{"message":"Simon says get time"}' | jq
+```
+
+For the web UI, enter the token in the `VIP command token` field before running
+a `Simon says ...` command. The field is optional for normal questions.
+
+If command authentication is enabled and the token is missing, invalid, or not
+configured in the environment, the command is not executed. The chatbot returns
+`source=auth` with metadata explaining why it was blocked.
+
 With strict RAG and provider override:
 
 ```bash
@@ -232,7 +314,9 @@ curl -s -X DELETE http://localhost:8088/api/history | jq
 
 The chat web UI has a history panel. Refresh loads recent entries, selecting an
 entry or pressing Use copies only the selected question into the question field,
-and Clear removes stored history.
+and Clear removes stored history. The optional VIP command token field is only
+needed for `Simon says ...` commands; normal questions can be submitted without
+authentication.
 
 ## Retrieval Profile Experiments
 
@@ -271,6 +355,13 @@ uses `nomic-embed-text`; the chatbot Makefile pulls that model when it starts
 the sibling Ollama service. Anthropic does not provide its own embedding model;
 the `qdrant_anthropic_openai` profile reuses OpenAI embeddings so Anthropic
 answers can still run against a real semantic retrieval index.
+
+Retrieval profiles are not LLM providers. For example,
+`qdrant_anthropic_openai` controls where context is retrieved from; the selected
+provider still controls which LLM answers. If `provider=anthropic` is selected
+without `ANTHROPIC_API_KEY`, the chatbot returns `source=llm_error` and keeps
+the retrieved context in metadata for debugging instead of presenting raw RAG
+context as if it were an Anthropic answer.
 
 List configured profiles:
 
@@ -926,14 +1017,29 @@ Set an Anthropic key only when you want to use that provider:
 export ANTHROPIC_API_KEY=...
 ```
 
+If an OpenAI or Anthropic request fails, the chatbot returns `source=llm_error`.
+The metadata includes `metadata.llm.status_code`, `metadata.llm.response_text`,
+and `metadata.llm.response_json` when the provider returned an HTTP error body.
+Those fields are useful for diagnosing invalid model names, account access
+issues, request validation errors, or provider-side failures.
+
 For Docker Compose, start from the provided environment template:
 
 ```bash
-cp .env.example .env
+cp .env.template .env
 ```
 
 Then edit `.env` locally and set only the providers you want to use. Do not
 commit real API keys.
+
+Set a command token when you want to allow VIP command execution:
+
+```bash
+CHATBOT_COMMAND_TOKEN=change-me-to-a-long-random-secret
+```
+
+Normal questions do not require this token. Only `Simon says ...` commands use
+it.
 
 You can still select a provider per request or change the default in config:
 
@@ -981,6 +1087,19 @@ tools:
 Commands are never built from user input. A user message can only select a tool
 that is explicitly configured. Tool execution also requires the message to start
 with `Simon says`.
+
+The sample config requires authentication for command execution:
+
+```yaml
+auth:
+  command_auth_required: true
+  command_token_env: CHATBOT_COMMAND_TOKEN
+```
+
+Without a valid bearer token, public users can still ask normal questions, but
+`Simon says ...` commands return `source=auth` and are not executed. CLI usage
+can pass `--command-token` or use the `CHATBOT_COMMAND_TOKEN` environment
+variable. REST and the web UI send the same value as a bearer token.
 
 The sample config includes these commands:
 

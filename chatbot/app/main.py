@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, File, Form, UploadFile
+from fastapi import FastAPI, File, Form, Header, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -69,13 +69,14 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/api/chat")
-def chat(request: ChatApiRequest) -> dict[str, Any]:
+def chat(request: ChatApiRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     response = service.answer(
         ChatRequest(
             message=request.message,
             provider=request.provider,
             model=request.model,
             retrieval_profile=request.retrieval_profile,
+            command_token=bearer_token(authorization),
             use_rag=request.use_rag,
             rag_only=request.rag_only,
             use_local_files=request.use_local_files,
@@ -94,12 +95,13 @@ def chat(request: ChatApiRequest) -> dict[str, Any]:
 
 
 @app.post("/api/chat/compare")
-def chat_compare(request: ChatCompareApiRequest) -> dict[str, Any]:
+def chat_compare(request: ChatCompareApiRequest, authorization: str | None = Header(default=None)) -> dict[str, Any]:
     return service.compare(
         ChatRequest(
             message=request.message,
             provider=request.provider,
             model=request.model,
+            command_token=bearer_token(authorization),
             force_llm=request.force_llm,
         ),
         request.retrieval_profiles,
@@ -185,3 +187,12 @@ def split_profiles(value: str | None) -> list[str] | None:
     if not value:
         return None
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    scheme, _, token = authorization.strip().partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        return None
+    return token.strip()

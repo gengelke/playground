@@ -28,6 +28,10 @@ providers:
     max_tokens: 800
     timeout_seconds: 60
 
+auth:
+  command_auth_required: true
+  command_token_env: CHATBOT_COMMAND_TOKEN
+
 rules:
   exact:
     - question: "How are you?"

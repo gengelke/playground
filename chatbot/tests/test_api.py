@@ -21,6 +21,32 @@ def test_chat_endpoint_exact_rule() -> None:
     assert data["source"] == "rule_exact"
 
 
+def test_chat_endpoint_denies_command_without_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("CHATBOT_COMMAND_TOKEN", "vip-secret")
+    client = TestClient(app)
+    response = client.post("/api/chat", json={"message": "Simon says get time"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "auth"
+    assert "Authentication is required" in data["answer"]
+
+
+def test_chat_endpoint_accepts_command_with_bearer_token(monkeypatch) -> None:
+    monkeypatch.setenv("CHATBOT_COMMAND_TOKEN", "vip-secret")
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat",
+        headers={"Authorization": "Bearer vip-secret"},
+        json={"message": "Simon says get time"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["source"] == "tool"
+    assert data["tool"] == "local_time"
+
+
 def test_history_endpoint_records_chat() -> None:
     client = TestClient(app)
     client.delete("/api/history")

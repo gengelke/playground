@@ -10,6 +10,7 @@ class ChatRequest:
     provider: str | None = None
     model: str | None = None
     retrieval_profile: str | None = None
+    command_token: str | None = None
     use_rag: bool = True
     rag_only: bool = False
     use_local_files: bool = False

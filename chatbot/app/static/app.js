@@ -331,11 +331,16 @@ async function initChatPage() {
       use_web_search: document.getElementById("use-web").checked,
       force_llm: document.getElementById("mode").value === "force_llm"
     };
+    const commandToken = document.getElementById("command-token").value.trim();
+    const headers = {"Content-Type": "application/json"};
+    if (commandToken) {
+      headers.Authorization = `Bearer ${commandToken}`;
+    }
 
     try {
       const response = await fetch(compareMode.checked ? "/api/chat/compare" : "/api/chat", {
         method: "POST",
-        headers: {"Content-Type": "application/json"},
+        headers,
         body: JSON.stringify(compareMode.checked ? {
           message: body.message,
           provider: body.provider,

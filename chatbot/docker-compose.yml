@@ -11,6 +11,7 @@ services:
       OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embed}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CHATBOT_COMMAND_TOKEN: ${CHATBOT_COMMAND_TOKEN:-}
       COMPANY_API_URL: ${COMPANY_API_URL:-http://host.docker.internal:8001/health}
       API_URL: ${API_URL:-http://host.docker.internal:8000/graphql}
       FASTAPI_BASIC_AUTH_USERNAME: ${FASTAPI_BASIC_AUTH_USERNAME:-admin}
