@@ -33,50 +33,41 @@ See [jenkins/README.md](jenkins/README.md).
 - `nginx`: Local HTTPS nginx service serving a static example page with the repository README image. <BR>
 See [nginx/README.md](nginx/README.md).
 
-## Chatbot quick start
+## Per-service usage
 
-The chatbot is an optional playground component. It is useful for trying a
-simple local-first assistant that can answer deterministic configured rules,
-run explicitly whitelisted commands, read local documents, query configured
-SQLite/REST sources, and use Qdrant plus the local Ollama LLM.
-
-Run locally with a Python virtual environment:
+Each service has its own README and Makefile. Use the top-level Makefile for
+common lifecycle commands:
 
 ```bash
-cd chatbot
-make run MODE=bare
+make up-chatbot MODE=docker
+make down-chatbot MODE=docker
+make status-chatbot MODE=docker
+make logs-chatbot MODE=docker
 ```
 
-The chatbot Makefile also starts the `ollama` service and pulls `llama3.1` if
-needed.
+The same target pattern works for all services:
 
-Run with Docker Compose, including Qdrant:
+```bash
+make up-vault MODE=docker
+make up-gitea MODE=docker
+make up-gitlab MODE=docker
+make up-nexus MODE=docker
+make up-api MODE=docker
+make up-jenkins MODE=docker
+make up-nginx MODE=docker
+make up-ollama MODE=docker
+make up-chatbot MODE=docker
+```
+
+You can also work from inside a service directory:
 
 ```bash
 cd chatbot
 make up MODE=docker
 ```
 
-Open the web UI at:
-
-```text
-http://127.0.0.1:8088
-```
-
-CLI and REST examples:
-
-```bash
-cd chatbot
-make ingest PATHS='sample_docs'
-.venv/bin/python -m app.cli ask "How are you?"
-curl -s http://127.0.0.1:8088/api/chat \
-  -H 'Content-Type: application/json' \
-  -d '{"message":"How are you?"}'
-```
-
-Integrations with Jenkins, Gitea, Nexus, Vault, or other local playground
-services are configured in `chatbot/config/config.yml`; they are not hardcoded
-into the chatbot.
+For chatbot web UI, CLI, REST API, ingestion, RAG, and provider configuration,
+see [chatbot/README.md](chatbot/README.md).
 
 ## Top-level orchestration
 
