@@ -49,6 +49,8 @@ htmlcov/
 # =========================
 .env
 .env.*
+!chatbot/.env.example
+!chatbot/.env.template
 *.pem
 *.key
 *.crt

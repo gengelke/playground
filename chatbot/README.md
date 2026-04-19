@@ -1,5 +1,14 @@
 # Local-first Chatbot
 
+> [!WARNING]
+> This repository is an experimental setup for educational purposes only.
+> Do not expose any part of it to the public internet.
+> It uses insecure defaults such as default passwords and other convenience settings that are only acceptable for isolated local testing.
+
+> [!IMPORTANT]
+> Parts of this repository were generated with AI assistance.
+> Review generated code and configuration carefully before using or modifying it.
+
 This is a simple Python 3.12 chatbot component for the DevOps playground. It can
 run by itself, or it can be added to a larger docker-compose setup and connected
 to other services through configuration.
@@ -118,7 +127,7 @@ python -m app.cli ask "How are you?"
 Whitelisted command:
 
 ```bash
-python -m app.cli ask "local time"
+python -m app.cli ask "Simon says show time"
 ```
 
 Interactive mode:
@@ -136,6 +145,21 @@ python -m app.cli ask "Explain these Jenkins notes" --provider local --model lla
 ```
 
 If no provider or model is supplied, `config/config.yml` decides.
+
+Ask with a specific retrieval profile:
+
+```bash
+python -m app.cli ask "Who maintains the playground?" --retrieval-profile sqlite --provider openai --model gpt-4.1-mini
+python -m app.cli ask "Who maintains the playground?" --retrieval-profile qdrant_local_hash --provider openai --model gpt-4.1-mini
+```
+
+Compare the same question against multiple retrieval profiles:
+
+```bash
+python -m app.cli compare "Who maintains the playground?" \
+  --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage \
+  --provider anthropic
+```
 
 ## REST Usage
 
@@ -179,11 +203,103 @@ curl -s http://localhost:8088/api/chat \
 
 `use_rag` and `use_local_files` are mutually exclusive.
 
+## Retrieval Profile Experiments
+
+Retrieval profiles make it possible to ask the same question against different
+knowledge sources and embedding strategies. The configured profiles live in
+`config/config.yml` under `retrieval.profiles`.
+
+This is intended for direct RAG experiments. You can keep the answering model
+the same, for example Anthropic or OpenAI, and change only the retrieval
+profile. That lets you compare whether the answer changes because the chatbot
+used direct local files, SQLite token matching, Qdrant with the built-in local
+hash vectors, Qdrant with OpenAI embeddings, Qdrant with Ollama embeddings, or
+Qdrant with Voyage embeddings.
+
+The default profiles are:
+
+- `local_files`: reads configured local files directly.
+- `sqlite`: searches ingested SQLite chunks by token overlap.
+- `hybrid`: searches `qdrant_local_hash` and `sqlite`, then merges results.
+- `qdrant_local_hash`: searches Qdrant vectors created with the built-in local
+  hash embedding.
+- `qdrant_openai`: searches a separate Qdrant collection created with OpenAI
+  embeddings.
+- `qdrant_ollama`: searches a separate Qdrant collection created with Ollama
+  embeddings.
+- `qdrant_anthropic_voyage`: searches a separate Qdrant collection created with
+  Voyage embeddings, which are the embedding models Anthropic recommends in its
+  embeddings documentation.
+
+Each Qdrant embedding strategy uses its own collection. Do not mix local hash,
+OpenAI, Ollama, and Voyage embeddings in one Qdrant collection because their
+vectors are not comparable.
+
+OpenAI embedding ingestion requires `OPENAI_API_KEY`. Ollama embedding ingestion
+uses `nomic-embed-text`; the chatbot Makefile pulls that model when it starts
+the sibling Ollama service. Anthropic does not provide its own embedding model;
+the `qdrant_anthropic_voyage` profile uses Voyage AI and requires
+`VOYAGE_API_KEY`.
+
+List configured profiles:
+
+```bash
+curl -s http://localhost:8088/api/retrieval-profiles | jq
+```
+
+Ask one question with one profile:
+
+```bash
+curl -s http://localhost:8088/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Who maintains the playground?",
+    "retrieval_profile": "sqlite",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "use_rag": true
+  }' | jq
+```
+
+Compare one question across several profiles:
+
+```bash
+curl -s http://localhost:8088/api/chat/compare \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Who maintains the playground?",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai", "qdrant_anthropic_voyage"]
+  }' | jq
+```
+
+The web UI exposes the same controls. Choose one retrieval profile for normal
+chat, or enable compare mode and select multiple profiles to see answers,
+metadata, retrieved context, and latency in one response.
+
+The compare response is useful because it shows more than the final text. For
+each selected profile, inspect:
+
+- `answer`: what the selected LLM answered from the retrieved context.
+- `metadata.context`: which chunks or local-file snippets were sent to the LLM.
+- `metadata.retrieval.profile`: which profile was used.
+- `metadata.retrieval.embedding`: which embedding provider/model was used for
+  Qdrant profiles.
+- `metadata.retrieval.latency_ms`: how long retrieval took.
+- `metadata.llm.latency_ms`: how long answer generation took.
+
+This separation is important: retrieval profiles decide which data reaches the
+LLM, while `provider` and `model` decide which LLM writes the final answer.
+Changing only the retrieval profile is the easiest way to compare local files,
+SQLite, homemade vectors, and real embeddings against the same question.
+
 ## Ingestion Flow
 
 Ingestion stores chunks in SQLite and, when Qdrant is enabled and reachable,
-also stores vectors in Qdrant. The embedding is deterministic and local, so
-ingestion works without OpenAI, Anthropic, or a local LLM.
+also stores vectors in the selected Qdrant retrieval profiles. The default
+ingest profiles are `sqlite` and `qdrant_local_hash`, so normal ingestion still
+works without OpenAI, Anthropic, or a local LLM.
 
 SQLite and Qdrant retrieval have simple relevance gates in `config/config.yml`:
 `min_query_chars`, `min_query_tokens`, and `min_score`. This prevents very short
@@ -191,9 +307,25 @@ or unrelated questions from always returning stored chunks. The `use_rag` flag
 controls whether document chunks are added to LLM context. Raw chunks are only
 returned as a fallback if the selected LLM is unavailable.
 
+Qdrant retrieval first asks Qdrant for more candidates than the final `top_k`
+and then applies a small language-agnostic lexical rerank. This helps direct
+command questions such as "how do I start the playground" surface chunks that
+contain the matching command, even when the raw vector score ranks a broader
+overview chunk higher. The relevant knobs are `candidate_multiplier`,
+`min_candidates`, `lexical_rerank_weight`, and `lexical_min_score` under
+`qdrant` in `config/config.yml`. Set `lexical_rerank_weight` to `0` if you want
+to inspect raw vector ranking only.
+
 ```bash
 python -m app.cli ingest sample_docs --reset
+python -m app.cli ingest sample_docs --reset --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage
 python -m app.cli ask "Jenkins REST API playground note"
+```
+
+The Makefile helper accepts the same profile list:
+
+```bash
+make ingest PATHS='sample_docs' PROFILES='sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_voyage'
 ```
 
 PDFs can be ingested from the CLI the same way. The PDF is prepared into
@@ -674,6 +806,22 @@ Set an Anthropic key only when you want to use that provider:
 export ANTHROPIC_API_KEY=...
 ```
 
+Set a Voyage key only when you want to ingest or search the
+`qdrant_anthropic_voyage` retrieval profile:
+
+```bash
+export VOYAGE_API_KEY=...
+```
+
+For Docker Compose, start from the provided environment template:
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` locally and set only the providers you want to use. Do not
+commit real API keys.
+
 You can still select a provider per request or change the default in config:
 
 ```yaml
@@ -703,7 +851,7 @@ Add a regex rule:
 rules:
   patterns:
     - pattern: "^help$"
-      answer: "Try local time, list sample docs, or ask about Jenkins."
+      answer: "Try Simon says show time, Simon says list sample docs, or ask about Jenkins."
 ```
 
 Add a whitelisted host command:
@@ -712,13 +860,15 @@ Add a whitelisted host command:
 tools:
   - name: local_time
     match:
-      exact: ["local time"]
+      exact: ["show time", "local time"]
     command: ["python", "-c", "import datetime; print(datetime.datetime.now().isoformat())"]
     timeout_seconds: 5
 ```
 
 Commands are never built from user input. A user message can only select a tool
-that is explicitly configured.
+that is explicitly configured. Tool execution also requires the message to start
+with `Simon says`, for example `Simon says show time` or
+`Simon says list sample docs`.
 
 ## Integrating With The DevOps Playground
 

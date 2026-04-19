@@ -21,6 +21,7 @@ providers:
     timeout_seconds: 60
 
   anthropic:
+    default_model: claude-sonnet-4-20250514
     api_key_env: ANTHROPIC_API_KEY
     base_url: https://api.anthropic.com/v1/messages
     api_version: "2023-06-01"
@@ -39,17 +40,19 @@ rules:
       answer: |
         Try:
         - How are you?
-        - local time
-        - list sample docs
+        - Simon says show time
+        - Simon says list sample docs
         - what does the playground note say about Jenkins?
 
 tools:
   - name: local_time
     match:
       exact:
+        - show time
         - local time
         - what time is it locally?
       patterns:
+        - "^show time$"
         - "^run local time$"
     command:
       - python3
@@ -138,6 +141,58 @@ documents:
   pdf_section_chars: 5000
   pdf_min_section_chars: 1200
 
+retrieval:
+  default_profile: hybrid
+  ingest_profiles:
+    - sqlite
+    - qdrant_local_hash
+  profiles:
+    - name: local_files
+      type: local_files
+    - name: sqlite
+      type: sqlite
+    - name: hybrid
+      type: hybrid
+      profiles:
+        - qdrant_local_hash
+        - sqlite
+    - name: qdrant_local_hash
+      type: qdrant
+      collection: chatbot_chunks_local_hash
+      embedding:
+        provider: local_hash
+        model: local-hash-96
+        vector_size: 96
+    - name: qdrant_openai
+      type: qdrant
+      collection: chatbot_chunks_openai
+      embedding:
+        provider: openai
+        model: text-embedding-3-small
+        vector_size: 1536
+        base_url: https://api.openai.com/v1/embeddings
+        api_key_env: OPENAI_API_KEY
+        timeout_seconds: 60
+    - name: qdrant_ollama
+      type: qdrant
+      collection: chatbot_chunks_ollama
+      embedding:
+        provider: ollama
+        model: nomic-embed-text
+        vector_size: 768
+        base_url: ${OLLAMA_EMBED_URL:-http://localhost:11434/api/embeddings}
+        timeout_seconds: 180
+    - name: qdrant_anthropic_voyage
+      type: qdrant
+      collection: chatbot_chunks_anthropic_voyage
+      embedding:
+        provider: voyage
+        model: voyage-3.5
+        vector_size: 1024
+        base_url: ${VOYAGE_EMBED_URL:-https://api.voyageai.com/v1/embeddings}
+        api_key_env: VOYAGE_API_KEY
+        timeout_seconds: 60
+
 qdrant:
   enabled: true
   url: ${QDRANT_URL:-http://localhost:6333}
@@ -147,6 +202,10 @@ qdrant:
   min_query_chars: 4
   min_query_tokens: 2
   min_score: 0.2
+  candidate_multiplier: 5
+  min_candidates: 20
+  lexical_rerank_weight: 2.0
+  lexical_min_score: 0.45
 
 web_search:
   enabled: false

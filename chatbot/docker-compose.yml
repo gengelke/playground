@@ -8,8 +8,11 @@ services:
       CHATBOT_CONFIG: /app/config/config.yml
       QDRANT_URL: http://qdrant:6333
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://playground-ollama:11434/api/chat}
+      OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embeddings}
+      VOYAGE_EMBED_URL: ${VOYAGE_EMBED_URL:-https://api.voyageai.com/v1/embeddings}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      VOYAGE_API_KEY: ${VOYAGE_API_KEY:-}
       COMPANY_API_URL: ${COMPANY_API_URL:-http://host.docker.internal:8001/health}
     volumes:
       - ./config:/app/config:ro

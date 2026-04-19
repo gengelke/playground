@@ -8,7 +8,8 @@ from app.chat import ChatService
 from app.ingest import ingest_paths
 from app.llm import selected_provider_model
 from app.models import ChatRequest, LLMResult
-from app.retrieval import search_qdrant, search_sqlite_chunks, tokenize
+from app.embeddings import embed_text
+from app.retrieval import concrete_ingest_profiles, search_qdrant, search_sqlite_chunks, tokenize
 
 
 def base_config(tmp_path: Path) -> dict:
@@ -65,10 +66,25 @@ def test_pattern_rule(tmp_path: Path) -> None:
 
 def test_configured_tool_is_whitelisted(tmp_path: Path) -> None:
     service = ChatService(base_config(tmp_path))
-    response = service.answer(ChatRequest(message="safe echo"))
+    response = service.answer(ChatRequest(message="Simon says safe echo"))
     assert response.answer == "safe output"
     assert response.source == "tool"
     assert response.tool == "echo_safe"
+
+
+def test_configured_tool_requires_simon_says_prefix(tmp_path: Path) -> None:
+    service = ChatService(base_config(tmp_path))
+    response = service.answer(ChatRequest(message="safe echo"))
+    assert response.source != "tool"
+
+
+def test_show_commands_lists_simon_says_commands(tmp_path: Path) -> None:
+    service = ChatService(base_config(tmp_path))
+    response = service.answer(ChatRequest(message="show commands"))
+    assert response.source == "rule_exact"
+    assert "Available commands:" in response.answer
+    assert "- Simon says safe echo" in response.answer
+    assert response.metadata["commands"] == ["safe echo"]
 
 
 def test_sqlite_document_chunks_are_sent_to_llm_context(tmp_path: Path, monkeypatch) -> None:
@@ -93,6 +109,67 @@ def test_sqlite_document_chunks_are_sent_to_llm_context(tmp_path: Path, monkeypa
     assert response.source == "llm"
     assert "Jenkins job status" in response.answer
     assert captured["context"][0]["source"] == "sqlite:docs/note.txt"
+
+
+def test_ingestion_accepts_selected_profiles(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.txt").write_text("Jenkins job status can be read from its REST API.", encoding="utf-8")
+
+    result = ingest_paths(config, ["docs"], reset=True, profiles=["sqlite", "qdrant_local_hash"])
+
+    assert result["profiles"] == ["sqlite", "qdrant_local_hash"]
+    assert result["ingested"][0]["profile_results"]["sqlite"]["stored"] is True
+    assert result["ingested"][0]["profile_results"]["qdrant_local_hash"]["stored"] is False
+
+
+def test_concrete_ingest_profiles_expands_hybrid(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+
+    profiles = concrete_ingest_profiles(config, ["hybrid"])
+
+    assert [profile["name"] for profile in profiles] == ["qdrant_local_hash", "sqlite"]
+
+
+def test_voyage_embedding_uses_api_key_and_input_type(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    monkeypatch.setenv("VOYAGE_API_KEY", "test-key")
+    captured = {}
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"data": [{"embedding": [0.1, 0.2, 0.3]}]}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr("app.embeddings.requests.post", fake_post)
+
+    vector, metadata = embed_text(
+        config,
+        {
+            "provider": "voyage",
+            "model": "voyage-3.5",
+            "base_url": "https://api.voyageai.com/v1/embeddings",
+            "api_key_env": "VOYAGE_API_KEY",
+        },
+        "Jenkins playground note",
+        input_type="query",
+    )
+
+    assert vector == [0.1, 0.2, 0.3]
+    assert captured["headers"]["Authorization"] == "Bearer test-key"
+    assert captured["json"]["input_type"] == "query"
+    assert captured["json"]["model"] == "voyage-3.5"
+    assert metadata["provider"] == "voyage"
 
 
 def test_ingestion_skips_editor_files(tmp_path: Path) -> None:
@@ -168,6 +245,7 @@ def test_direct_question_gets_answer_from_llm_with_rag_context(tmp_path: Path, m
     assert response.answer == "Gordon Engelke is the author and maintainer of the DevOps Playground."
     assert captured["message"] == "Who is Gordon Engelke?"
     assert "Gordon Engelke is the author" in captured["context"][0]["text"]
+    assert response.metadata["retrieval"]["profile"] == "hybrid"
 
 
 def test_relation_question_is_handled_by_llm_with_rag_context(tmp_path: Path, monkeypatch) -> None:
@@ -215,6 +293,53 @@ def test_qdrant_search_ignores_too_short_queries(tmp_path: Path) -> None:
     }
 
     assert search_qdrant(config, "x") == []
+
+
+def test_qdrant_search_reranks_exact_command_chunk(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    config["qdrant"] = {
+        "enabled": True,
+        "min_query_chars": 4,
+        "min_query_tokens": 2,
+        "min_score": 0.2,
+        "candidate_multiplier": 5,
+        "min_candidates": 20,
+        "lexical_rerank_weight": 2.0,
+        "lexical_min_score": 0.45,
+    }
+    config["retrieval"] = {
+        "profiles": [
+            {
+                "name": "qdrant_local_hash",
+                "type": "qdrant",
+                "collection": "test_chunks",
+                "embedding": {"provider": "local_hash", "model": "local-hash-96", "vector_size": 96},
+            }
+        ]
+    }
+
+    class FakePoint:
+        def __init__(self, score: float, text: str):
+            self.score = score
+            self.payload = {"text": text, "source_path": "docs/faq.md", "chunk_id": int(score * 1000)}
+
+    class FakeClient:
+        def search(self, collection_name, query_vector, limit):
+            assert collection_name == "test_chunks"
+            assert limit == 20
+            return [
+                FakePoint(0.90, "The DevOps Playground is a local playground."),
+                FakePoint(0.80, "The playground includes Vault, Gitea, Jenkins, and Ollama."),
+                FakePoint(0.10, "How do I start the DevOps Playground? Run make all MODE=docker."),
+            ]
+
+    monkeypatch.setattr("app.retrieval.ensure_qdrant_collection", lambda *args, **kwargs: True)
+    monkeypatch.setattr("app.retrieval.get_qdrant_client", lambda _config: FakeClient())
+    monkeypatch.setattr("app.retrieval.embed_with_profile", lambda *args, **kwargs: ([0.1] * 96, {}))
+
+    chunks = search_qdrant(config, "how do i start the devops playground", limit=1, profile_name="qdrant_local_hash")
+
+    assert chunks[0].text == "How do I start the DevOps Playground? Run make all MODE=docker."
 
 
 def test_tokenizer_splits_uploaded_file_names() -> None:
@@ -332,6 +457,74 @@ def test_local_files_mode_uses_only_configured_local_files(tmp_path: Path) -> No
     assert "The playground includes Jenkins and Ollama." in response.answer
 
 
+def test_local_files_mode_ignores_stopwords_when_selecting_excerpt(tmp_path: Path) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "devops-playground.md").write_text(
+        "# DevOps Playground Notes\n\n"
+        "This chatbot is intended to run as an optional service in the DevOps playground.\n\n"
+        "# The Author of DevOps Playground\n\n"
+        "Gordon Engelke is the author and maintainer of the DevOps Playground\n",
+        encoding="utf-8",
+    )
+    (docs / "playground-faq.md").write_text(
+        "# DevOps Playground Detailed FAQ\n\n"
+        "The DevOps Playground is an educational repository for experimenting with local DevOps tools.\n",
+        encoding="utf-8",
+    )
+    config["local_files"] = [
+        {
+            "name": "docs",
+            "enabled": True,
+            "path": "docs",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["playground"]},
+        }
+    ]
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="who is an author", use_rag=False, use_local_files=True))
+
+    assert response.source == "local_file"
+    assert "Gordon Engelke is the author and maintainer" in response.answer
+    assert "educational repository" not in response.answer
+
+
+def test_local_files_retrieval_profile_returns_file_answer_without_llm(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "faq.md").write_text(
+        "## Who is the author?\n\nGordon Engelke is the author and maintainer of the DevOps Playground.",
+        encoding="utf-8",
+    )
+    config["local_files"] = [
+        {
+            "name": "docs",
+            "enabled": True,
+            "path": "docs",
+            "max_files": 10,
+            "max_chars": 1200,
+            "match": {"patterns": ["author"]},
+        }
+    ]
+
+    def fake_llm(*args, **kwargs):
+        raise AssertionError("local_files retrieval profile should not call the LLM")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="who is the author", retrieval_profile="local_files", use_rag=True))
+
+    assert response.source == "local_file"
+    assert "Gordon Engelke is the author" in response.answer
+    assert response.metadata["retrieval"]["profile"] == "local_files"
+    assert response.metadata["context"][0]["source"].startswith("local_files:local_files:")
+
+
 def test_local_files_and_rag_are_mutually_exclusive(tmp_path: Path) -> None:
     service = ChatService(base_config(tmp_path))
     response = service.answer(ChatRequest(message="Jenkins", use_rag=True, use_local_files=True))
@@ -352,3 +545,43 @@ def test_rag_context_is_returned_if_llm_fails(tmp_path: Path) -> None:
 
     assert response.source == "rag_context"
     assert "Jenkins job status" in response.answer
+
+
+def test_chat_uses_selected_sqlite_retrieval_profile(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.txt").write_text("Jenkins job status can be read from its REST API.", encoding="utf-8")
+    ingest_paths(config, ["docs"], reset=True)
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        return LLMResult("Jenkins job status can be read from its REST API.", "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    response = service.answer(ChatRequest(message="Jenkins REST status", retrieval_profile="sqlite", use_rag=True))
+
+    assert response.source == "llm"
+    assert response.metadata["retrieval"]["profile"] == "sqlite"
+    assert response.metadata["context"][0]["source"] == "sqlite:docs/note.txt"
+
+
+def test_compare_runs_each_retrieval_profile(tmp_path: Path, monkeypatch) -> None:
+    config = base_config(tmp_path)
+    docs = tmp_path / "docs"
+    docs.mkdir()
+    (docs / "note.txt").write_text("Jenkins job status can be read from its REST API.", encoding="utf-8")
+    ingest_paths(config, ["docs"], reset=True)
+
+    def fake_llm(config, message, provider=None, model=None, context=None):
+        return LLMResult(context[0]["source"], "local", "test-model")
+
+    monkeypatch.setattr("app.chat.call_llm", fake_llm)
+
+    service = ChatService(config)
+    result = service.compare(ChatRequest(message="Jenkins REST status"), ["sqlite", "qdrant_local_hash"])
+
+    assert [item["retrieval_profile"] for item in result["results"]] == ["sqlite", "qdrant_local_hash"]
+    assert result["results"][0]["source"] == "llm"
+    assert result["results"][1]["source"] == "rag_empty"

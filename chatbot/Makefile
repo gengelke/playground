@@ -17,6 +17,7 @@ LOCAL_LLM_URL ?= http://localhost:11434/api/chat
 OLLAMA_DIR ?= $(ROOT_DIR)/ollama
 OLLAMA_MODE ?= docker
 OLLAMA_MODEL ?= llama3.1
+OLLAMA_EMBED_MODEL ?= nomic-embed-text
 CHATBOT_START_OLLAMA ?= true
 CHATBOT_STOP_OLLAMA ?= true
 DOCKER_COMPOSE ?= docker compose -f docker-compose.yml
@@ -55,6 +56,7 @@ deps: $(DEPS_STAMP)
 ensure-ollama:
 ifeq ($(CHATBOT_START_OLLAMA),true)
 	@$(MAKE) -C "$(OLLAMA_DIR)" up MODE="$(OLLAMA_MODE)" OLLAMA_MODEL="$(OLLAMA_MODEL)"
+	@$(MAKE) -C "$(OLLAMA_DIR)" pull-model MODE="$(OLLAMA_MODE)" OLLAMA_MODEL="$(OLLAMA_EMBED_MODEL)"
 endif
 
 stop-ollama:
@@ -90,11 +92,11 @@ test: deps
 
 ingest: deps
 	@if [[ -z "$(PATHS)" ]]; then \
-		echo "Usage: make ingest PATHS='sample_docs [more paths]'"; \
+		echo "Usage: make ingest PATHS='sample_docs [more paths]' [PROFILES='sqlite,qdrant_local_hash']"; \
 		exit 1; \
 	fi
 	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" \
-		"$(VENV_PYTHON)" -m app.cli ingest $(PATHS)
+		"$(VENV_PYTHON)" -m app.cli ingest $(PATHS) $(if $(PROFILES),--profiles "$(PROFILES)",)
 
 docker-build:
 	@CHATBOT_PORT="$(CHATBOT_PORT)" $(DOCKER_COMPOSE) build
@@ -236,4 +238,5 @@ help:
 		"  LOCAL_LLM_URL=$(LOCAL_LLM_URL)" \
 		"  CHATBOT_START_OLLAMA=$(CHATBOT_START_OLLAMA)" \
 		"  OLLAMA_MODEL=$(OLLAMA_MODEL)" \
+		"  OLLAMA_EMBED_MODEL=$(OLLAMA_EMBED_MODEL)" \
 		"  LOG_FILE=$(LOG_FILE)"

@@ -21,6 +21,30 @@ def test_chat_endpoint_exact_rule() -> None:
     assert data["source"] == "rule_exact"
 
 
+def test_retrieval_profiles_endpoint() -> None:
+    client = TestClient(app)
+    response = client.get("/api/retrieval-profiles")
+
+    assert response.status_code == 200
+    data = response.json()
+    names = {profile["name"] for profile in data["profiles"]}
+    assert "sqlite" in names
+    assert "qdrant_local_hash" in names
+    assert "qdrant_anthropic_voyage" in names
+
+
+def test_chat_compare_endpoint() -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/chat/compare",
+        json={"message": "How are you?", "retrieval_profiles": ["sqlite", "qdrant_local_hash"]},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert [item["retrieval_profile"] for item in data["results"]] == ["sqlite", "qdrant_local_hash"]
+
+
 def test_upload_ingest_endpoint() -> None:
     client = TestClient(app)
     response = client.post(

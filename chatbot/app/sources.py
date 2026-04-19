@@ -13,6 +13,8 @@ from app.config import resolve_path
 from app.ingest import read_document
 from app.retrieval import tokenize
 
+TOOL_PREFIX = "simon says"
+
 
 def normalize_text(text: str) -> str:
     return " ".join(text.strip().lower().split())
@@ -44,10 +46,33 @@ def match_pattern_rule(config: dict[str, Any], message: str) -> dict[str, Any] |
     return None
 
 
+def static_question_answer(config: dict[str, Any], message: str) -> dict[str, Any] | None:
+    if normalize_text(message) != "show commands":
+        return None
+
+    commands = configured_tool_commands(config)
+    if not commands:
+        return {
+            "question": "show commands",
+            "answer": "No Simon says commands are configured.",
+            "commands": [],
+        }
+
+    return {
+        "question": "show commands",
+        "answer": "Available commands:\n" + "\n".join(f"- Simon says {command}" for command in commands),
+        "commands": commands,
+    }
+
+
 def run_configured_tool(config: dict[str, Any], message: str) -> dict[str, Any] | None:
+    tool_message = tool_message_body(message)
+    if not tool_message:
+        return None
+
     for tool in config.get("tools", []):
         match = tool.get("match", {})
-        if not first_match(message, match.get("exact"), match.get("patterns")):
+        if not first_match(tool_message, match.get("exact"), match.get("patterns")):
             continue
 
         command = tool.get("command")
@@ -75,6 +100,29 @@ def run_configured_tool(config: dict[str, Any], message: str) -> dict[str, Any] 
     return None
 
 
+def tool_message_body(message: str) -> str | None:
+    normalized = normalize_text(message)
+    if normalized == TOOL_PREFIX:
+        return ""
+    prefix = f"{TOOL_PREFIX} "
+    if not normalized.startswith(prefix):
+        return None
+    return normalized[len(prefix):].strip()
+
+
+def configured_tool_commands(config: dict[str, Any]) -> list[str]:
+    commands: list[str] = []
+    seen: set[str] = set()
+    for tool in config.get("tools", []):
+        for exact in tool.get("match", {}).get("exact", []) or []:
+            normalized = normalize_text(str(exact))
+            if not normalized or normalized in seen:
+                continue
+            seen.add(normalized)
+            commands.append(normalized)
+    return commands
+
+
 def search_local_files(config: dict[str, Any], message: str, require_match: bool = True) -> dict[str, Any] | None:
     for source in config.get("local_files", []):
         if source.get("enabled") is False:
@@ -93,10 +141,15 @@ def search_local_files(config: dict[str, Any], message: str, require_match: bool
                 text = read_document(file_path)
             except Exception:
                 continue
-            excerpt = best_excerpt(text, message, int(source.get("max_chars", 1200)))
+            excerpt, score = best_excerpt_with_score(text, message, int(source.get("max_chars", 1200)))
             if excerpt:
-                excerpts.append({"path": str(file_path), "text": excerpt})
+                excerpts.append({"path": str(file_path), "text": excerpt, "score": score})
         if excerpts:
+            excerpts.sort(key=lambda item: item["score"], reverse=True)
+            best_score = excerpts[0]["score"]
+            minimum_score = max(1.0, best_score * 0.5)
+            max_matches = int(source.get("max_matches", source.get("max_files", 10)))
+            excerpts = [item for item in excerpts if item["score"] >= minimum_score][:max_matches]
             return {"name": source.get("name"), "matches": excerpts}
     return None
 
@@ -185,23 +238,75 @@ def search_web(config: dict[str, Any], message: str, enabled_override: bool | No
 
 
 def best_excerpt(text: str, query: str, max_chars: int = 1200) -> str:
+    excerpt, _score = best_excerpt_with_score(text, query, max_chars=max_chars)
+    return excerpt
+
+
+def best_excerpt_with_score(text: str, query: str, max_chars: int = 1200) -> tuple[str, float]:
     if not text.strip():
-        return ""
-    query_tokens = set(tokenize(query))
+        return "", 0.0
+    query_tokens = query_search_tokens(query)
     if not query_tokens:
-        return text[:max_chars].strip()
+        return text[:max_chars].strip(), 1.0
 
     paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
     if not paragraphs:
         paragraphs = [text]
+    blocks = excerpt_blocks(paragraphs)
+    block_tokens = [token_counts(block) for block in blocks]
+    document_frequency = {
+        token: sum(1 for tokens in block_tokens if token in tokens)
+        for token in query_tokens
+    }
+    block_count = max(len(blocks), 1)
 
-    def score(paragraph: str) -> int:
-        return len(query_tokens & set(tokenize(paragraph)))
+    def score(index: int) -> float:
+        tokens = block_tokens[index]
+        total = 0.0
+        for token in query_tokens:
+            if token not in tokens:
+                continue
+            # Rare query terms are more useful than common terms, without a language-specific stopword list.
+            rarity = block_count / max(document_frequency.get(token, 1), 1)
+            total += rarity
+        return total
 
-    best = max(paragraphs, key=score)
-    if score(best) == 0:
-        best = text
-    return best[:max_chars].strip()
+    best_index = max(range(len(blocks)), key=score)
+    best_score = score(best_index)
+    if best_score == 0:
+        return "", 0.0
+    return blocks[best_index][:max_chars].strip(), best_score
+
+
+def token_counts(text: str) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for token in tokenize(text):
+        if len(token) <= 1:
+            continue
+        counts[token] = counts.get(token, 0) + 1
+    return counts
+
+
+def query_search_tokens(text: str) -> set[str]:
+    tokens = {token for token in tokenize(text) if len(token) > 1}
+    longer_tokens = {token for token in tokens if len(token) > 2}
+    return longer_tokens or tokens
+
+
+def excerpt_blocks(paragraphs: list[str]) -> list[str]:
+    blocks = []
+    for index, paragraph in enumerate(paragraphs):
+        if is_markdown_heading(paragraph) and index + 1 < len(paragraphs):
+            blocks.append(f"{paragraph}\n\n{paragraphs[index + 1]}")
+        elif index > 0 and is_markdown_heading(paragraphs[index - 1]):
+            blocks.append(f"{paragraphs[index - 1]}\n\n{paragraph}")
+        else:
+            blocks.append(paragraph)
+    return blocks
+
+
+def is_markdown_heading(paragraph: str) -> bool:
+    return bool(re.match(r"^#{1,6}\s+\S+", paragraph.strip()))
 
 
 def format_rows(rows: list[dict[str, Any]]) -> str:

@@ -5,6 +5,10 @@
 > Do not expose any part of it to the public internet.
 > It uses insecure defaults such as default passwords and other convenience settings that are only acceptable for isolated local testing.
 
+> [!IMPORTANT]
+> Parts of this repository were generated with AI assistance.
+> Review generated code and configuration carefully before using or modifying it.
+
 This setup runs one local Gitea instance and attaches two action runners.
 All first-run initialization is automatic.
 

@@ -1,154 +1,140 @@
 # DevOps Playground Detailed FAQ
 
-Source: top-level `README.md` in the DevOps Playground repository. Command
-names are aligned with the top-level `Makefile`, and host-facing port examples
-are aligned with `ports.env`.
+Source: top-level `README.md`, service READMEs, top-level `Makefile`,
+`ports.env`, and the repository git history. This file is intended as example
+input for the chatbot. It can be used as a configured local file or ingested
+into SQLite/Qdrant RAG.
+
+## Who is the author of the DevOps Playground?
+
+Gordon Engelke is the author and maintainer of the DevOps Playground.
+
+The repository git history shows the first commit as:
+
+```text
+356b050 2026-03-06 Gordon Engelke Create README.md
+```
+
+For this FAQ, the DevOps Playground is considered to have been born on
+2026-03-06, based on that first commit date.
 
 ## What is the DevOps Playground?
 
-The DevOps Playground is an educational repository for experimenting with local
-DevOps tools and workflows. It contains playground setups for multiple services
-and topics, including source control, CI/CD, artifact management, secret
-management, APIs, reverse proxying, local LLM usage, and a chatbot component.
+The DevOps Playground is an educational local playground for experimenting with
+DevOps services, automation workflows, APIs, package management, secret
+management, local LLM usage, and chatbot-assisted operations.
 
-The playground is intended for isolated local testing. It is not a production
-platform and it is not intended to be exposed to the public internet.
+It is intentionally local-first. The goal is to make it easy to start realistic
+tooling on a developer machine, inspect how the parts work, connect services
+together, and test workflows without relying on shared or production
+infrastructure.
 
-## What is the main purpose of the DevOps Playground?
-
-The main purpose is to provide a local learning and experimentation environment
-where a developer can start realistic DevOps components, inspect how they work,
-connect services together, and test integration patterns without depending on
-external infrastructure.
-
-The repository is useful for learning how tools such as Vault, Gitea, GitLab,
-Nexus, Jenkins, nginx, FastAPI, Ollama, and the chatbot can run side by side and
-interact through local networking, REST APIs, and configuration.
-
-## Is the DevOps Playground safe to expose to the public internet?
-
-No. The playground uses insecure defaults such as default passwords and other
-convenience settings. These choices are acceptable for isolated local testing
-but not for public, shared, or production environments.
-
-Do not expose any part of the playground to the public internet.
+The playground is experimental. It uses insecure defaults such as default
+passwords and convenience settings. It must not be exposed to the public
+internet.
 
 ## Was the DevOps Playground generated with AI assistance?
 
-Parts of the repository were generated with AI assistance. Generated code and
-configuration should be reviewed carefully before use or modification.
+Parts of the repository were generated with AI assistance. The repository
+README and service READMEs include an AI assistance notice. Generated code and
+configuration should be reviewed carefully before being used or modified.
 
-## Which services are included in the DevOps Playground?
+## Which services are included?
 
-The top-level README lists these services:
+The playground currently contains these top-level service components:
 
 - `vault`
 - `gitea`
 - `gitlab`
 - `nexus`
 - `api`
-- `ollama`
-- `chatbot`
 - `jenkins`
 - `nginx`
+- `ollama`
+- `chatbot`
 
-Each service has its own directory and README. The top-level Makefile can start,
-stop, inspect, and clean these services from one place.
+Each service has its own directory, README, and Makefile. The top-level
+Makefile can orchestrate all services or start and stop individual services.
 
-## What does the Vault service do?
+## What is the difference between `make all` and `make devops`?
 
-The `vault` service provides a local HashiCorp Vault OSS environment. It supports
-automatic bootstrap and initialization in Docker or bare mode.
+`make all MODE=docker` starts every service in the playground:
 
-Vault represents the playground's secret-management component. Other
-Vault-dependent services can verify Vault health during startup. The top-level
-README explicitly notes that Gitea, GitLab, Nexus, and Jenkins are
-Vault-dependent services.
+```text
+vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> ollama -> chatbot
+```
 
-## What does the Gitea service do?
+`make devops MODE=docker` starts the smaller DevOps scenario subset:
 
-The `gitea` service provides a local Gitea SCM instance. It includes two action
-runners and can run in Docker or bare mode.
+```text
+vault -> nexus -> api -> gitea -> jenkins -> nginx -> ollama -> chatbot
+```
 
-Gitea represents a lightweight local source-control and automation system in the
-playground. It can be used for repository workflows and runner-based automation.
+The DevOps scenario intentionally does not start `gitlab`. Use `make all` or
+`make up-gitlab` when GitLab should be included.
 
-## What does the GitLab service do?
+## How do I start every service?
 
-The `gitlab` service provides a local GitLab CE setup. It includes two GitLab
-Runner workers and can run in Docker or bare mode.
+Run from the repository root:
 
-GitLab represents a fuller local source-control and CI/CD platform in the
-playground.
+```bash
+make all MODE=docker
+```
 
-## What does the Nexus service do?
+`make up MODE=docker` is an alias for the same all-service startup flow.
 
-The `nexus` service provides a local Sonatype Nexus OSS repository manager with
-automated first-run initialization.
+## How do I stop every service?
 
-Nexus represents the artifact repository component of the playground. It can be
-used for repository health, artifact, and package-management experiments.
+Run from the repository root:
 
-## What does the API service do?
+```bash
+make down MODE=docker
+```
 
-The `api` service provides a FastAPI playground exposing REST and GraphQL
-endpoints. It includes client code generation and testing workflows.
+The full stop order is:
 
-The API service is useful for trying REST and GraphQL interactions from other
-parts of the playground, including the chatbot.
+```text
+chatbot -> ollama -> nginx -> jenkins -> api -> nexus -> gitlab -> gitea -> vault
+```
 
-## What does the Ollama service do?
+## How do I start or stop one service?
 
-The `ollama` service provides a local Ollama LLM runtime in Docker. It uses
-persistent model storage and automatically pulls the `llama3.1` model.
+Use the top-level per-service targets:
 
-Ollama can be used by the chatbot as a local LLM provider. The chatbot Makefile
-starts the Ollama service and ensures `llama3.1` is available when needed.
+```bash
+make up-vault MODE=docker
+make down-vault MODE=docker
+make status-vault MODE=docker
+make logs-vault MODE=docker
+```
 
-## What does the chatbot service do?
+The same pattern exists for all services:
 
-The `chatbot` service provides a local-first Python/FastAPI chatbot. It includes
-a CLI, REST API, web UI, configurable rules, whitelisted tools, local-file
-sources, SQLite document chunks, and optional Qdrant RAG.
+```text
+vault gitea gitlab nexus api jenkins nginx ollama chatbot
+```
 
-The chatbot can run standalone or connect to other playground services through
-configuration. Integrations with Jenkins, Gitea, Nexus, Vault, or other services
-are configured in `chatbot/config/config.yml`; they are not hardcoded into the
-chatbot.
+Examples:
 
-## What does the Jenkins service do?
+```bash
+make up-gitea MODE=docker
+make status-gitlab MODE=docker
+make logs-chatbot MODE=docker
+make down-nginx MODE=docker
+```
 
-The `jenkins` service provides a dual Jenkins setup with `prod` and `dev`
-instances. It includes preconfigured agents and pipeline bootstrap.
+You can also work inside a service directory:
 
-Jenkins represents the CI/CD automation component of the playground.
+```bash
+cd chatbot
+make up MODE=docker
+```
 
-## What does the nginx service do?
+## How are ports configured?
 
-The `nginx` service provides a local HTTPS nginx service. It serves a static
-example page with the repository README image.
+Host-facing ports are centralized in `ports.env`.
 
-nginx represents a local reverse proxy or HTTPS frontend component.
-
-## How are the playground services connected?
-
-The top-level README describes the services as a coordinated local playground.
-They are connected by local process execution, Docker Compose, shared local
-networking, configured URLs, REST APIs, and service-specific configuration.
-
-The chatbot is explicitly designed to connect to other playground services
-through configuration instead of hardcoded service names. For example, it can be
-configured to query Jenkins, Gitea, Nexus, Vault, or the API service through
-local REST endpoints.
-
-Vault-dependent services verify Vault health during startup. The top-level
-README names Gitea, GitLab, Nexus, and Jenkins as Vault-dependent services.
-
-## How are host-facing ports configured?
-
-Host-facing ports are managed centrally in `ports.env`.
-
-The documented host port values include:
+Current default ports:
 
 - Vault: `8200`
 - API: `8000`
@@ -163,277 +149,413 @@ The documented host port values include:
 - Ollama: `11434`
 - chatbot: `8088`
 
-Update `ports.env` to change ports for all services in one place.
+The same file defines shared URLs such as:
 
-## What shared URLs are defined by the central port configuration?
-
-The central port file defines local URLs such as:
-
-- `VAULT_ADDR=http://127.0.0.1:8200`
-- `API_URL=http://127.0.0.1:8000`
-- `GITEA_ROOT_URL=http://localhost:3000/`
-- `GITLAB_EXTERNAL_URL=http://localhost:8929`
-- `NGINX_URL=https://localhost:8443`
-- `OLLAMA_URL=http://127.0.0.1:11434`
-- `CHATBOT_URL=http://127.0.0.1:8088`
-
-These URLs make it easier for services and users to refer to the same local
-endpoints consistently.
-
-## What modes can the playground services use?
-
-The top-level Makefile supports `MODE=docker` and `MODE=bare`.
-
-Use Docker mode when you want services to run through Docker or Docker Compose.
-Use bare mode when a service supports running directly on the host with local
-dependencies.
-
-Examples:
-
-```bash
-make all MODE=docker
-make devops MODE=docker
-make up-chatbot MODE=docker
-make up-vault MODE=bare
+```text
+VAULT_ADDR=http://127.0.0.1:8200
+API_URL=http://127.0.0.1:8000
+GITEA_ROOT_URL=http://localhost:3000/
+GITLAB_EXTERNAL_URL=http://localhost:8929
+NGINX_URL=https://localhost:8443
+OLLAMA_URL=http://127.0.0.1:11434
+CHATBOT_URL=http://127.0.0.1:8088
 ```
 
-## How do I start all playground services?
+## What does the Vault service do?
 
-Run:
+The `vault` service provides a local HashiCorp Vault OSS environment. It is the
+secret-management component of the playground.
+
+Vault can run in Docker mode or bare mode. Its Makefile starts Vault, waits for
+the API, initializes Vault on first startup, stores generated credentials under
+`.vault/credentials.env`, unseals Vault, creates a `secret/` KV v2 mount, enables
+`userpass` auth, and configures default users.
+
+Default users:
+
+- `admin` / `password`
+- `user` / `password`
+
+Other services can sync generated credentials into Vault when
+`../vault/.vault/credentials.env` is available and Vault is reachable. The
+playground treats Gitea, GitLab, Nexus, and Jenkins as Vault-dependent services.
+
+Common usage:
 
 ```bash
-make all MODE=docker
-```
-
-The alias `make up MODE=docker` starts all services as well.
-
-The top-level Makefile starts all services in the configured start order.
-
-## How do I stop all playground services?
-
-Run:
-
-```bash
+cd vault
+make up MODE=docker
+make status MODE=docker
+make creds
 make down MODE=docker
 ```
 
-The aliases `make stop MODE=docker` and `make down MODE=docker` stop services in
-reverse order.
+## What does the Gitea service do?
 
-## How do I restart all playground services?
+The `gitea` service provides a local Gitea source-control instance with two
+action runners. It is the lightweight SCM and runner-based automation component
+of the playground.
 
-Run:
+Gitea can run in Docker mode or bare mode. First-run initialization is
+automatic. The service creates managed users, prepares repositories, and can
+attach runners for workflow execution.
 
-```bash
-make restart MODE=docker
-```
+The Gitea setup can prepare repositories such as:
 
-The restart target runs the stop flow and then the start flow.
+- `example-pipeline`
+- `playground`
+- `generate-library`
+- `library-example-client`
+- `add-employee`
+- `print-employee`
 
-## What is the full service start order?
+Those repositories are used by Jenkins and API-related workflows. For example,
+Jenkins jobs can clone local Gitea repositories, run pipeline logic, generate a
+GraphQL client, upload packages to Nexus, and call the FastAPI service.
 
-The full service start order is:
-
-```text
-vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> ollama -> chatbot
-```
-
-This order is used by the top-level `make all`, `make up`, and `make start`
-targets.
-
-## What is the full service stop order?
-
-The full service stop order is:
-
-```text
-chatbot -> ollama -> nginx -> jenkins -> api -> nexus -> gitlab -> gitea -> vault
-```
-
-This order is used by the top-level `make down` and `make stop` targets.
-
-## How do I start the DevOps scenario subset?
-
-Run:
+Common usage:
 
 ```bash
-make devops MODE=docker
-```
-
-The aliases `make devops MODE=docker` and `make devops-up MODE=docker` start the
-DevOps scenario subset.
-
-The DevOps scenario starts:
-
-```text
-vault -> nexus -> api -> gitea -> jenkins -> nginx -> ollama -> chatbot
-```
-
-This subset omits GitLab from the documented DevOps scenario order.
-
-## How do I stop the DevOps scenario subset?
-
-Run:
-
-```bash
-make devops-down MODE=docker
-```
-
-The alias `make devops-stop MODE=docker` also stops the DevOps scenario subset.
-
-The DevOps scenario stop order is:
-
-```text
-chatbot -> ollama -> nginx -> jenkins -> gitea -> api -> nexus -> vault
-```
-
-## How do I see the top-level command help?
-
-Run:
-
-```bash
-make help
-```
-
-The help output describes top-level orchestration commands, DevOps scenario
-commands, cleanup commands, and per-service command patterns.
-
-## How do I check the status of all services?
-
-Run:
-
-```bash
+cd gitea
+make up MODE=docker
+make logs MODE=docker
 make status MODE=docker
+make down MODE=docker
 ```
 
-The top-level status target checks each service in start order.
+## What does the GitLab service do?
 
-## How do I start one individual service?
+The `gitlab` service provides a local GitLab CE setup with two GitLab Runner
+workers. It is the fuller local SCM and CI/CD platform option in the playground.
 
-Use the per-service `up-<service>` target:
+GitLab can run in Docker mode or bare mode. Docker mode starts GitLab CE and two
+runner workers. Bare mode uses host OS installation scripts intended for a
+Debian/Ubuntu-style environment.
+
+Default GitLab access:
+
+- Web: `http://localhost:8929`
+- SSH: port `2224`
+- Admin user: `admin`
+- Regular user: `user`
+
+The GitLab setup creates or syncs managed users, prints generated credentials,
+and can sync credentials into Vault when Vault is available.
+
+Common usage:
 
 ```bash
-make up-vault MODE=docker
-make up-gitea MODE=docker
-make up-gitlab MODE=docker
-make up-nexus MODE=docker
-make up-api MODE=docker
-make up-jenkins MODE=docker
-make up-nginx MODE=docker
-make up-ollama MODE=docker
-make up-chatbot MODE=docker
+cd gitlab
+make up MODE=docker
+make status MODE=docker
+make logs MODE=docker
+make down MODE=docker
 ```
 
-Each target calls the corresponding service directory's own Makefile with the
-same mode.
+## What does the Nexus service do?
 
-## How do I stop one individual service?
+The `nexus` service provides a local Sonatype Nexus OSS repository manager. It
+is the artifact and package repository component of the playground.
 
-Use the per-service `down-<service>` target:
+Nexus can run in Docker mode or bare mode. Its startup flow waits for Nexus to
+be healthy, accepts the Community Edition EULA when required, creates managed
+users, configures anonymous access, and ensures a hosted PyPI repository named
+`pypi-public` exists.
+
+The playground uses Nexus for package-management experiments. Jenkins and API
+workflows can generate a Python GraphQL client package and upload it to the
+Nexus PyPI repository. Other workflows can then install the generated package
+from Nexus.
+
+Default Nexus URL:
+
+```text
+http://localhost:8083
+```
+
+Common usage:
 
 ```bash
-make down-vault MODE=docker
-make down-gitea MODE=docker
-make down-gitlab MODE=docker
-make down-nexus MODE=docker
-make down-api MODE=docker
-make down-jenkins MODE=docker
-make down-nginx MODE=docker
-make down-ollama MODE=docker
-make down-chatbot MODE=docker
+cd nexus
+make up MODE=docker
+make status MODE=docker
+make logs MODE=docker
+make down MODE=docker
 ```
 
-Each target stops that one service through the service directory's own Makefile.
+## What does the API service do?
 
-## How do I check the status of one individual service?
+The `api` service provides the FastAPI playground. It exposes REST and GraphQL
+endpoints and includes tooling for generated GraphQL client workflows.
 
-Use the per-service `status-<service>` target:
+The API directory contains:
+
+- `fastapi/`: REST and GraphQL service
+- `graphql-library/`: generated Python GraphQL client package
+- `example-client/`: CLI workflow client that exercises the API and generated package
+
+FastAPI requires HTTP Basic Auth on REST, GraphQL, docs, and schema endpoints.
+The health endpoint remains unauthenticated for readiness checks.
+
+Default credentials:
+
+- `FASTAPI_BASIC_AUTH_USERNAME=admin`
+- `FASTAPI_BASIC_AUTH_PASSWORD=password`
+
+Useful API examples:
+
+- `GET /employees`
+- `GET /employees/{employee_id}`
+- `POST /employees`
+- `PUT /employees/{employee_id}`
+- `DELETE /employees/{employee_id}`
+- `GET /roles`
+- GraphQL employee and role operations
+
+The API service is used by Jenkins and Gitea workflow examples. Jenkins jobs can
+call FastAPI directly, fetch roles for Active Choices parameters, run generated
+client workflows, and use packages installed from Nexus.
+
+Common usage:
 
 ```bash
-make status-vault MODE=docker
-make status-gitea MODE=docker
-make status-gitlab MODE=docker
-make status-nexus MODE=docker
-make status-api MODE=docker
-make status-jenkins MODE=docker
-make status-nginx MODE=docker
-make status-ollama MODE=docker
-make status-chatbot MODE=docker
+cd api
+make up MODE=docker
+make library-generate MODE=docker
+make run MODE=docker
+make down MODE=docker
 ```
 
-## How do I view logs for one individual service?
+## What does the Jenkins service do?
 
-Use the per-service `logs-<service>` target:
+The `jenkins` service provides a dual Jenkins setup:
+
+- `jenkins-prod`
+- `jenkins-dev`
+
+Each instance has agents and is configured from shared as-code bootstrap logic.
+The instances differ by environment values such as instance name and branch.
+
+Jenkins is the CI/CD automation component of the playground. It can clone local
+Gitea repositories, run branch-specific pipelines, generate client libraries,
+upload generated packages to Nexus, call FastAPI endpoints, and run jobs with
+parameters populated from API data.
+
+Important Jenkins behavior:
+
+- `jenkins-prod` defaults to branch `main`
+- `jenkins-dev` defaults to branch `dev`
+- Docker-mode agents include the Docker CLI and bind the host Docker socket
+- managed jobs can clone local Gitea repositories
+- generated client workflows can publish to Nexus
+- jobs can call FastAPI using shared Basic Auth credentials
+- credentials can be synced with Vault when available
+
+Default Jenkins URLs:
+
+- prod: `http://127.0.0.1:8081`
+- dev: `http://127.0.0.1:8082`
+
+Common usage:
 
 ```bash
-make logs-vault MODE=docker
-make logs-gitea MODE=docker
-make logs-gitlab MODE=docker
-make logs-nexus MODE=docker
-make logs-api MODE=docker
-make logs-jenkins MODE=docker
-make logs-nginx MODE=docker
-make logs-ollama MODE=docker
-make logs-chatbot MODE=docker
+cd jenkins
+make up MODE=docker
+make status MODE=docker
+make logs MODE=docker
+make down MODE=docker
 ```
 
-## What does `make up-vault MODE=docker` do?
+## What does the nginx service do?
 
-It starts the Vault service by running the `up` target in the `vault` directory
-with `MODE=docker`. Vault is the local secret-management service.
+The `nginx` service provides a local HTTPS endpoint. It serves a static example
+page and displays the same image referenced at the top of the repository
+README.
 
-## What does `make up-gitea MODE=docker` do?
+Startup generates a local self-signed TLS certificate under:
 
-It starts the Gitea service by running the `up` target in the `gitea` directory
-with `MODE=docker`. Gitea is the local SCM service with action runners.
+```text
+nginx/.state/tls/
+```
 
-## What does `make up-gitlab MODE=docker` do?
+Browsers will warn because the certificate is self-signed. That warning is
+expected for local testing.
 
-It starts the GitLab service by running the `up` target in the `gitlab`
-directory with `MODE=docker`. GitLab is the local GitLab CE service with two
-runner workers.
+Default URL:
 
-## What does `make up-nexus MODE=docker` do?
+```text
+https://localhost:8443
+```
 
-It starts the Nexus service by running the `up` target in the `nexus` directory
-with `MODE=docker`. Nexus is the local artifact repository manager.
+Common usage:
 
-## What does `make up-api MODE=docker` do?
+```bash
+cd nginx
+make up MODE=docker
+make status MODE=docker
+make logs MODE=docker
+make down MODE=docker
+```
 
-It starts the API service by running the `up` target in the `api` directory with
-`MODE=docker`. The API service exposes REST and GraphQL endpoints.
+## What does the Ollama service do?
 
-## What does `make up-jenkins MODE=docker` do?
+The `ollama` service provides a local Ollama LLM runtime in Docker. It is the
+local LLM component used by the chatbot.
 
-It starts the Jenkins service by running the `up` target in the `jenkins`
-directory with `MODE=docker`. Jenkins provides the dual prod/dev CI setup with
-agents and pipeline bootstrap.
+The Ollama service keeps pulled models on the host under:
 
-## What does `make up-nginx MODE=docker` do?
+```text
+ollama/data
+```
 
-It starts the nginx service by running the `up` target in the `nginx` directory
-with `MODE=docker`. nginx provides the local HTTPS static example page.
+That host directory is mounted into the container as `/root/.ollama`, so model
+downloads survive container restarts and container recreation.
 
-## What does `make up-ollama MODE=docker` do?
+The Makefile starts the Ollama container, waits for `/api/tags`, and pulls the
+configured model. By default, that model is:
 
-It starts the Ollama service by running the `up` target in the `ollama`
-directory with `MODE=docker`. Ollama provides the local LLM runtime and
-automatic `llama3.1` model pull.
+```text
+llama3.1
+```
 
-## What does `make up-chatbot MODE=docker` do?
+The chatbot also uses Ollama embeddings when the `qdrant_ollama` retrieval
+profile is selected. The chatbot Makefile ensures `nomic-embed-text` is pulled
+when needed.
 
-It starts the chatbot service by running the `up` target in the `chatbot`
-directory with `MODE=docker`. The chatbot provides the CLI, REST API, web UI,
-configurable sources, SQLite document chunks, and Qdrant RAG.
+Default URL:
 
-## How do I remove generated service state?
+```text
+http://127.0.0.1:11434
+```
 
-Run:
+Docker chatbot integration URL:
+
+```text
+http://playground-ollama:11434/api/chat
+```
+
+Common usage:
+
+```bash
+cd ollama
+make up MODE=docker
+make pull-model OLLAMA_MODEL=llama3.1
+make status MODE=docker
+make down MODE=docker
+```
+
+## What does the chatbot service do?
+
+The `chatbot` service provides a local-first Python 3.12 chatbot with:
+
+- CLI interface
+- FastAPI REST API
+- simple browser UI
+- deterministic configured rules
+- regex rules
+- whitelisted host commands
+- local file sources
+- configured SQLite sources
+- configured REST sources
+- SQLite document chunk storage
+- optional Qdrant RAG
+- configurable LLM providers
+- retrieval and embedding comparison profiles
+
+The chatbot is intended to remain useful standalone, but it can also connect to
+other playground services through configuration. Integrations are not hardcoded.
+For example, REST sources for Jenkins, Gitea, Nexus, Vault, or the API service
+can be configured in `chatbot/config/config.yml`.
+
+The chatbot request pipeline checks deterministic paths before using an LLM. It
+only calls the selected LLM when deterministic rules, tools, local sources, and
+retrieval paths are insufficient or when generative behavior is explicitly
+needed.
+
+Default web UI:
+
+```text
+http://127.0.0.1:8088
+```
+
+Common usage:
+
+```bash
+cd chatbot
+make up MODE=docker
+make ingest PATHS='sample_docs'
+.venv/bin/python -m app.cli ask "How are you?"
+curl -s http://127.0.0.1:8088/api/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message":"How are you?"}'
+```
+
+## How can the chatbot compare local files, SQLite, and Qdrant?
+
+The chatbot supports retrieval profiles. They make it possible to ask the same
+question against different knowledge sources and embedding strategies.
+
+Default retrieval profiles include:
+
+- `local_files`
+- `sqlite`
+- `hybrid`
+- `qdrant_local_hash`
+- `qdrant_openai`
+- `qdrant_ollama`
+- `qdrant_anthropic_voyage`
+
+This makes the chatbot useful for comparing answer quality and efficiency when
+using:
+
+- direct local files
+- SQLite token-based chunk retrieval
+- Qdrant with the built-in local hash embedding
+- Qdrant with OpenAI embeddings
+- Qdrant with Ollama embeddings
+- Qdrant with Voyage embeddings recommended for Anthropic-style retrieval
+
+Example compare call:
+
+```bash
+curl -s http://127.0.0.1:8088/api/chat/compare \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "Who maintains the playground?",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai"]
+  }'
+```
+
+The response includes the answer, selected retrieval profile, provider/model,
+retrieved context, and timing metadata.
+
+## How are the services connected?
+
+The services are connected through local networking, Docker Compose networks,
+shared host ports, configured URLs, REST APIs, generated credentials, and common
+Makefile orchestration.
+
+Important examples:
+
+- Vault stores and shares generated service credentials when available.
+- Gitea provides local repositories and action runners.
+- GitLab provides an alternate local SCM and CI/CD system.
+- Nexus stores generated packages such as the GraphQL client package.
+- FastAPI exposes REST and GraphQL endpoints used by example clients and Jenkins jobs.
+- Jenkins clones local repositories, runs pipelines, calls FastAPI, and publishes packages to Nexus.
+- nginx provides a local HTTPS frontend example.
+- Ollama provides local LLM inference for the chatbot.
+- The chatbot can query configured services through REST APIs and use local docs as knowledge.
+
+## How do I remove generated state?
+
+Run from the repository root:
 
 ```bash
 make distclean
 ```
-
-The alias `make distclan` also exists.
 
 The cleanup order is:
 
@@ -441,172 +563,41 @@ The cleanup order is:
 chatbot -> ollama -> nginx -> jenkins -> api -> nexus -> gitlab -> gitea -> vault
 ```
 
-This removes generated service state for services that persist local artifacts.
+`make distclan` is available as an alias.
 
-## How do I run the chatbot locally with Python?
+## How can this FAQ be used by the chatbot?
 
-Run:
-
-```bash
-cd chatbot
-make run MODE=bare
-```
-
-The chatbot Makefile also starts the Ollama service and pulls `llama3.1` if
-needed.
-
-## How do I run the chatbot with Docker Compose?
-
-Run:
-
-```bash
-cd chatbot
-make up MODE=docker
-```
-
-This starts the chatbot Docker setup, including Qdrant. The chatbot Makefile also
-starts Ollama when needed.
-
-## Where is the chatbot web UI?
-
-The chatbot web UI is available at:
+This FAQ is stored in:
 
 ```text
-http://127.0.0.1:8088
+chatbot/sample_docs/playground-faq.md
 ```
 
-The same value is represented by `CHATBOT_URL` in the central port
-configuration.
+It can be used in two ways:
 
-## How do I ingest the chatbot sample documents?
+1. As a configured local-file source when local-file mode is enabled.
+2. As RAG input after ingestion into SQLite and Qdrant.
 
-Run from the chatbot directory:
+To ingest the sample documents:
 
 ```bash
 cd chatbot
 make ingest PATHS='sample_docs'
 ```
 
-In Docker mode, the API ingestion endpoint can also ingest `sample_docs` if the
-path is visible inside the chatbot container.
-
-## How do I ask the chatbot a question from the CLI?
-
-Run:
+For a clean RAG rebuild through the API:
 
 ```bash
-cd chatbot
-.venv/bin/python -m app.cli ask "How are you?"
-```
-
-## How do I ask the chatbot a question through REST?
-
-Run:
-
-```bash
-curl -s http://127.0.0.1:8088/api/chat \
+curl -sS http://127.0.0.1:8088/api/ingest \
   -H 'Content-Type: application/json' \
-  -d '{"message":"How are you?"}'
+  -d '{"paths":["sample_docs"],"reset":true}'
 ```
 
-## How can the chatbot use this FAQ?
+After ingestion, ask questions such as:
 
-This FAQ lives in `chatbot/sample_docs`, so it can be used in two ways:
-
-1. As a configured local-file source, when local-file mode is enabled.
-2. As RAG input, after ingestion into SQLite and Qdrant.
-
-For RAG usage, ingest the sample documents:
-
-```bash
-cd chatbot
-make ingest PATHS='sample_docs'
-```
-
-Then ask questions in the web UI, CLI, or REST API with RAG enabled.
-
-## What is the difference between local-file mode and RAG mode in the chatbot?
-
-Local-file mode reads configured files directly and returns excerpts. It is
-useful for quick deterministic file lookups.
-
-RAG mode retrieves relevant chunks from SQLite and Qdrant and sends that context
-to the configured LLM. It is useful for natural-language answers based on
-ingested documents.
-
-The web UI treats local-file mode and RAG mode as separate options.
-
-## How does the chatbot connect to Jenkins, Gitea, Nexus, Vault, or other services?
-
-The chatbot does not hardcode dependencies on those services. Integrations are
-configured in `chatbot/config/config.yml`.
-
-The top-level README states that integrations with Jenkins, Gitea, Nexus, Vault,
-or other local playground services are configured in the chatbot config file.
-This keeps external service integration optional and configuration-driven.
-
-## What should I configure if a service port changes?
-
-Update `ports.env` at the repository root. That file centralizes host-facing
-ports and derived URLs so service configuration can stay consistent.
-
-## What is the recommended first workflow for a new user?
-
-Start with Docker mode:
-
-```bash
-make devops MODE=docker
-```
-
-Open the chatbot:
-
-```text
-http://127.0.0.1:8088
-```
-
-Ingest the sample documents:
-
-```bash
-cd chatbot
-make ingest PATHS='sample_docs'
-```
-
-Ask RAG questions about the playground, such as:
-
-- Which services are included in the DevOps Playground?
-- How do I start the DevOps scenario?
-- What does the Ollama service do?
-- How are ports configured?
-- How do I stop Jenkins?
-
-## What is the recommended workflow for starting only the chatbot?
-
-Run:
-
-```bash
-cd chatbot
-make up MODE=docker
-```
-
-Then open:
-
-```text
-http://127.0.0.1:8088
-```
-
-This is useful when the user only wants the chatbot, Qdrant, and Ollama without
-starting the whole playground.
-
-## What is the recommended workflow for working with one service?
-
-Use the top-level per-service targets:
-
-```bash
-make up-jenkins MODE=docker
-make status-jenkins MODE=docker
-make logs-jenkins MODE=docker
-make down-jenkins MODE=docker
-```
-
-The same command pattern works for Vault, Gitea, GitLab, Nexus, API, nginx,
-Ollama, and the chatbot.
+- Who is the author of the DevOps Playground?
+- When was the DevOps Playground born?
+- Which services are included in the playground?
+- What does Jenkins do in the playground?
+- How does Nexus connect to Jenkins and the API service?
+- How can the chatbot compare SQLite and Qdrant retrieval?

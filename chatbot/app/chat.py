@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from app.config import load_config
 from app.llm import call_llm, selected_provider_model
 from app.models import ChatRequest, ChatResponse, RetrievedChunk
-from app.retrieval import hybrid_search
+from app.retrieval import default_retrieval_profile, get_retrieval_profile, search_retrieval_profile
 from app.sources import (
     format_rows,
     match_exact_rule,
@@ -16,6 +17,7 @@ from app.sources import (
     run_configured_tool,
     search_local_files,
     search_web,
+    static_question_answer,
 )
 
 
@@ -40,6 +42,7 @@ class ChatService:
         self.config = config or load_config()
 
     def answer(self, request: ChatRequest) -> ChatResponse:
+        started = time.perf_counter()
         message = request.message.strip()
         if not message:
             return ChatResponse(answer="Please enter a question.", source="validation")
@@ -47,11 +50,20 @@ class ChatService:
         normalized = normalize_text(message)
         provider, model = selected_provider_model(self.config, request.provider, request.model)
         use_rag = request.use_rag or request.rag_only
+        retrieval_profile = request.retrieval_profile or default_retrieval_profile(self.config)
         if use_rag and request.use_local_files:
             return ChatResponse(
                 answer="Choose either RAG or local files, not both.",
                 source="validation",
                 metadata={"use_rag": use_rag, "use_local_files": request.use_local_files},
+            )
+
+        static_answer = static_question_answer(self.config, message)
+        if static_answer:
+            return ChatResponse(
+                answer=static_answer.get("answer", ""),
+                source="rule_exact",
+                metadata={"matched": static_answer.get("question"), "commands": static_answer.get("commands", [])},
             )
 
         exact_rule = match_exact_rule(self.config, message)
@@ -130,14 +142,46 @@ class ChatService:
                 )
 
         rag_chunks: list[RetrievedChunk] = []
+        retrieval_metadata: dict[str, Any] = {}
         if use_rag:
-            rag_chunks = hybrid_search(self.config, message)
+            retrieval_started = time.perf_counter()
+            try:
+                profile = get_retrieval_profile(self.config, retrieval_profile)
+                retrieval_metadata = retrieval_profile_metadata(profile)
+                if profile.get("type") == "local_files":
+                    local_file_result = search_local_files(self.config, message, require_match=False)
+                    retrieval_metadata["latency_ms"] = elapsed_ms(retrieval_started)
+                    if not local_file_result:
+                        return ChatResponse(
+                            answer="No relevant local file content found.",
+                            source="local_file_empty",
+                            metadata={"context": [], "use_rag": use_rag, "retrieval": retrieval_metadata},
+                        )
+                    chunks = local_file_context_chunks(local_file_result, retrieval_profile)
+                    return ChatResponse(
+                        answer=format_file_answer(local_file_result),
+                        source="local_file",
+                        metadata={
+                            "context": chunks_to_context(chunks),
+                            "chunks": chunks_metadata(chunks),
+                            "retrieval": retrieval_metadata,
+                        },
+                    )
+                else:
+                    rag_chunks = search_retrieval_profile(self.config, message, retrieval_profile)
+            except Exception as exc:
+                return ChatResponse(
+                    answer=f"Retrieval profile '{retrieval_profile}' is unavailable: {exc}",
+                    source="retrieval_error",
+                    metadata={"retrieval_profile": retrieval_profile, "error": str(exc)},
+                )
+            retrieval_metadata["latency_ms"] = elapsed_ms(retrieval_started)
 
         if use_rag and not rag_chunks:
             return ChatResponse(
                 answer="No relevant RAG context found.",
                 source="rag_empty",
-                metadata={"context": [], "use_rag": use_rag},
+                metadata={"context": [], "use_rag": use_rag, "retrieval": retrieval_metadata},
             )
 
         web_result = None if use_rag else search_web(self.config, message, request.use_web_search)
@@ -148,14 +192,21 @@ class ChatService:
         if web_result and web_result.get("related"):
             context.append({"source": "web_search", "text": "\n".join(web_result["related"])})
 
+        llm_started = time.perf_counter()
         llm_result = call_llm(self.config, message, provider=provider, model=model, context=context)
+        llm_latency_ms = elapsed_ms(llm_started)
         if rag_chunks and llm_result.metadata.get("error"):
             return ChatResponse(
                 answer=format_chunks(rag_chunks),
                 source="rag_context",
                 provider=llm_result.provider,
                 model=llm_result.model,
-                metadata={"llm": llm_result.metadata, "chunks": chunks_metadata(rag_chunks)},
+                metadata={
+                    "llm": llm_result.metadata,
+                    "chunks": chunks_metadata(rag_chunks),
+                    "retrieval": retrieval_metadata,
+                    "latency_ms": elapsed_ms(started),
+                },
             )
 
         return ChatResponse(
@@ -163,8 +214,42 @@ class ChatService:
             source="llm" if not llm_result.metadata.get("error") else "none",
             provider=llm_result.provider,
             model=llm_result.model,
-            metadata={"llm": llm_result.metadata, "context": context},
+            metadata={
+                "llm": {**llm_result.metadata, "latency_ms": llm_latency_ms},
+                "context": context,
+                "retrieval": retrieval_metadata if use_rag else None,
+                "latency_ms": elapsed_ms(started),
+            },
         )
+
+    def compare(self, request: ChatRequest, retrieval_profiles: list[str]) -> dict[str, Any]:
+        results = []
+        for profile in retrieval_profiles:
+            response = self.answer(
+                ChatRequest(
+                    message=request.message,
+                    provider=request.provider,
+                    model=request.model,
+                    retrieval_profile=profile,
+                    use_rag=True,
+                    rag_only=True,
+                    use_local_files=False,
+                    use_web_search=False,
+                    force_llm=request.force_llm,
+                )
+            )
+            results.append(
+                {
+                    "retrieval_profile": profile,
+                    "answer": response.answer,
+                    "source": response.source,
+                    "provider": response.provider,
+                    "model": response.model,
+                    "tool": response.tool,
+                    "metadata": response.metadata,
+                }
+            )
+        return {"message": request.message, "results": results}
 
 
 def should_call_llm(message: str, request: ChatRequest) -> bool:
@@ -210,3 +295,36 @@ def chunks_metadata(chunks: list[RetrievedChunk]) -> list[dict[str, Any]]:
 
 def chunks_to_context(chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
     return [{"source": f"{chunk.retriever}:{chunk.source_path}", "text": chunk.text} for chunk in chunks]
+
+
+def local_file_context_chunks(result: dict[str, Any], profile_name: str) -> list[RetrievedChunk]:
+    chunks = []
+    for index, match in enumerate((result or {}).get("matches", [])):
+        chunks.append(
+            RetrievedChunk(
+                text=match.get("text", ""),
+                source_path=match.get("path", ""),
+                chunk_index=index,
+                score=1.0,
+                retriever=f"local_files:{profile_name}",
+            )
+        )
+    return chunks
+
+
+def retrieval_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:
+    metadata = {
+        "profile": profile.get("name"),
+        "type": profile.get("type"),
+    }
+    if profile.get("collection"):
+        metadata["collection"] = profile.get("collection")
+    if profile.get("embedding"):
+        metadata["embedding"] = profile.get("embedding")
+    if profile.get("profiles"):
+        metadata["profiles"] = profile.get("profiles")
+    return metadata
+
+
+def elapsed_ms(started: float) -> int:
+    return int((time.perf_counter() - started) * 1000)

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import load_config, resolve_path
-from app.retrieval import reset_document_db, reset_qdrant_collection, store_chunks, upsert_qdrant_chunks
+from app.retrieval import concrete_ingest_profiles, reset_document_db, reset_qdrant_collection, store_chunks, upsert_qdrant_chunks_for_profile
 
 
 TEXT_SUFFIXES = {".txt", ".md", ".rst", ".log", ".csv", ".json", ".yaml", ".yml", ".html", ".htm"}
@@ -302,10 +302,13 @@ def iter_input_files(paths: list[Path]) -> list[Path]:
     return files
 
 
-def ingest_paths(config: dict[str, Any], paths: list[str | Path], reset: bool = False) -> dict[str, Any]:
+def ingest_paths(config: dict[str, Any], paths: list[str | Path], reset: bool = False, profiles: list[str] | None = None) -> dict[str, Any]:
+    selected_profiles = concrete_ingest_profiles(config, profiles)
     if reset:
         reset_document_db(config)
-        reset_qdrant_collection(config)
+        for profile in selected_profiles:
+            if profile.get("type") == "qdrant":
+                reset_qdrant_collection(config, profile["name"])
 
     document_config = config.get("documents", {})
     chunk_size = int(document_config.get("chunk_size", 900))
@@ -325,14 +328,18 @@ def ingest_paths(config: dict[str, Any], paths: list[str | Path], reset: bool = 
                     skipped.append({"path": str(path), "reason": "pdf had no extractable text"})
                     continue
                 for prepared_path in prepared_paths:
-                    ingest_one_path(config, prepared_path, chunk_size, overlap, ingested, skipped)
+                    ingest_one_path(config, prepared_path, chunk_size, overlap, selected_profiles, ingested, skipped)
                 continue
 
-            ingest_one_path(config, path, chunk_size, overlap, ingested, skipped)
+            ingest_one_path(config, path, chunk_size, overlap, selected_profiles, ingested, skipped)
         except Exception as exc:
             skipped.append({"path": str(path), "reason": str(exc)})
 
-    result = {"ingested": ingested, "skipped": skipped}
+    result = {
+        "ingested": ingested,
+        "skipped": skipped,
+        "profiles": [profile["name"] for profile in selected_profiles],
+    }
     if prepared:
         result["prepared"] = prepared
     return result
@@ -343,6 +350,7 @@ def ingest_one_path(
     path: Path,
     chunk_size: int,
     overlap: int,
+    profiles: list[dict[str, Any]],
     ingested: list[dict[str, Any]],
     skipped: list[dict[str, Any]],
 ) -> None:
@@ -354,8 +362,15 @@ def ingest_one_path(
             return
         relative = relative_path(config, path)
         ids = store_chunks(config, relative, path.name, chunks)
-        qdrant_written = upsert_qdrant_chunks(config, ids, relative, chunks)
-        ingested.append({"path": relative, "chunks": len(chunks), "qdrant": qdrant_written})
+        profile_results: dict[str, Any] = {"sqlite": {"stored": True, "chunks": len(chunks)}}
+        qdrant_written = False
+        for profile in profiles:
+            if profile.get("type") != "qdrant":
+                continue
+            result = upsert_qdrant_chunks_for_profile(config, profile["name"], ids, relative, chunks)
+            profile_results[profile["name"]] = result
+            qdrant_written = qdrant_written or bool(result.get("stored"))
+        ingested.append({"path": relative, "chunks": len(chunks), "qdrant": qdrant_written, "profile_results": profile_results})
     except Exception as exc:
         skipped.append({"path": str(path), "reason": str(exc)})
 
@@ -373,10 +388,12 @@ def main() -> None:
     parser.add_argument("paths", nargs="+", help="Files or directories to ingest.")
     parser.add_argument("--config", default=None, help="Path to config.yml.")
     parser.add_argument("--reset", action="store_true", help="Clear existing chunks before ingesting.")
+    parser.add_argument("--profiles", default=None, help="Comma-separated retrieval profiles to ingest, for example sqlite,qdrant_local_hash.")
     args = parser.parse_args()
 
     config = load_config(args.config)
-    result = ingest_paths(config, args.paths, reset=args.reset)
+    profiles = split_profiles(args.profiles)
+    result = ingest_paths(config, args.paths, reset=args.reset, profiles=profiles)
     for item in result.get("prepared", []):
         print(f"prepared {item['source']} sections={item.get('sections', 0)} pages={item.get('pages', 0)}")
         for warning in item.get("warnings", []):
@@ -385,6 +402,12 @@ def main() -> None:
         print(f"ingested {item['path']} chunks={item['chunks']} qdrant={item['qdrant']}")
     for item in result["skipped"]:
         print(f"skipped {item['path']}: {item['reason']}")
+
+
+def split_profiles(value: str | None) -> list[str] | None:
+    if not value:
+        return None
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 if __name__ == "__main__":

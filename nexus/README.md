@@ -5,6 +5,10 @@
 > Do not expose any part of it to the public internet.
 > It uses insecure defaults such as default passwords and other convenience settings that are only acceptable for isolated local testing.
 
+> [!IMPORTANT]
+> Parts of this repository were generated with AI assistance.
+> Review generated code and configuration carefully before using or modifying it.
+
 This project supports two run modes through a single Makefile entrypoint:
 
 - `make up MODE=docker` to run Nexus OSS in Docker

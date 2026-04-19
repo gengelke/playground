@@ -14,49 +14,43 @@
 
 ## Services
 
-- `vault`: Local HashiCorp Vault OSS environment with automatic bootstrap/init in docker or bare mode. <BR>
-See [vault/README.md](vault/README.md).
-- `gitea`: Local Gitea SCM instance with two action runners, available in docker or bare mode. <BR>
-See [gitea/README.md](gitea/README.md).
-- `gitlab`: Local GitLab CE setup with two GitLab Runner workers in docker or bare mode. <BR>
-See [gitlab/README.md](gitlab/README.md).
-- `nexus`: Local Sonatype Nexus OSS repository manager with automated first-run initialization. <BR>
-See [nexus/README.md](nexus/README.md).
-- `api`: FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. <BR>
-See [api/README.md](api/README.md).
-- `ollama`: Local Ollama LLM runtime in Docker with persistent model storage and automatic `llama3.1` pull. <BR>
-See [ollama/README.md](ollama/README.md).
-- `chatbot`: Local-first Python/FastAPI chatbot with CLI, REST API, web UI, configurable rules/tools/sources, SQLite document chunks, and optional Qdrant RAG. It can run standalone or connect to other playground services through config. <BR>
-See [chatbot/README.md](chatbot/README.md).
-- `jenkins`: Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. <BR>
-See [jenkins/README.md](jenkins/README.md).
-- `nginx`: Local HTTPS nginx service serving a static example page with the repository README image. <BR>
-See [nginx/README.md](nginx/README.md).
+The playground currently contains these top-level service components:
+
+| Service | Make target | Description | Details |
+| --- | --- | --- | --- |
+| `vault` | `vault` | Local HashiCorp Vault OSS environment with automatic bootstrap/init in Docker or bare mode. | [vault/README.md](vault/README.md) |
+| `gitea` | `gitea` | Local Gitea SCM instance with two action runners, available in Docker or bare mode. | [gitea/README.md](gitea/README.md) |
+| `gitlab` | `gitlab` | Local GitLab CE setup with two GitLab Runner workers in Docker or bare mode. | [gitlab/README.md](gitlab/README.md) |
+| `nexus` | `nexus` | Local Sonatype Nexus OSS repository manager with automated first-run initialization. | [nexus/README.md](nexus/README.md) |
+| `api` | `api` | FastAPI playground exposing REST and GraphQL endpoints, including client code generation/testing workflows. | [api/README.md](api/README.md) |
+| `jenkins` | `jenkins` | Dual Jenkins setup (`prod` and `dev`) with preconfigured agents and pipeline bootstrap. | [jenkins/README.md](jenkins/README.md) |
+| `nginx` | `nginx` | Local HTTPS nginx service serving a static example page with the repository README image. | [nginx/README.md](nginx/README.md) |
+| `ollama` | `ollama` | Local Ollama LLM runtime in Docker with persistent model storage and automatic `llama3.1` pull. | [ollama/README.md](ollama/README.md) |
+| `chatbot` | `chatbot` | Local-first Python/FastAPI chatbot with CLI, REST API, web UI, configurable rules/tools/sources, SQLite document chunks, and optional Qdrant RAG. | [chatbot/README.md](chatbot/README.md) |
 
 ## Per-service usage
 
 Each service has its own README and Makefile. Use the top-level Makefile for
-common lifecycle commands:
+common lifecycle commands. Replace `<service>` with one of:
 
-```bash
-make up-chatbot MODE=docker
-make down-chatbot MODE=docker
-make status-chatbot MODE=docker
-make logs-chatbot MODE=docker
+```text
+vault gitea gitlab nexus api jenkins nginx ollama chatbot
 ```
 
-The same target pattern works for all services:
+```bash
+make up-<service> MODE=docker
+make down-<service> MODE=docker
+make status-<service> MODE=docker
+make logs-<service> MODE=docker
+```
+
+Examples:
 
 ```bash
 make up-vault MODE=docker
-make up-gitea MODE=docker
-make up-gitlab MODE=docker
-make up-nexus MODE=docker
-make up-api MODE=docker
-make up-jenkins MODE=docker
-make up-nginx MODE=docker
-make up-ollama MODE=docker
-make up-chatbot MODE=docker
+make status-gitlab MODE=docker
+make logs-chatbot MODE=docker
+make down-nginx MODE=docker
 ```
 
 You can also work from inside a service directory:
@@ -71,26 +65,41 @@ see [chatbot/README.md](chatbot/README.md).
 
 ## Top-level orchestration
 
-A top-level `Makefile` can orchestrate all services, including Ollama and the
-chatbot.
+The top-level `Makefile` can orchestrate either every service or the smaller
+DevOps scenario subset.
 
-Start all services in dependency order:
+Start every service in dependency order:
 
 ```bash
 make all MODE=docker
+# same as
+make up MODE=docker
 ```
 
-Stop all services in reverse dependency order:
+Stop every service in reverse dependency order:
 
 ```bash
 make down MODE=docker
 ```
 
-Dependency order:
+All-service dependency order:
 
 `vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> ollama -> chatbot`
 
-Vault-dependent services (`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and will reuse the current `MODE`.
+Start the DevOps scenario subset:
+
+```bash
+make devops MODE=docker
+```
+
+DevOps scenario order:
+
+`vault -> nexus -> api -> gitea -> jenkins -> nginx -> ollama -> chatbot`
+
+The DevOps scenario intentionally does not start `gitlab`; use `make all` or
+`make up-gitlab` when you want GitLab as well. Vault-dependent services
+(`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and
+reuse the current `MODE`.
 
 ## Cleanup
 

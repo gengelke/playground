@@ -37,12 +37,14 @@ help:
 	@echo "  make status                    # show status for all services"
 	@echo ""
 	@echo "Per-service:"
-	@echo "  make up-vault MODE=docker|bare"
-	@echo "  make down-vault MODE=docker|bare"
-	@echo "  make status-vault MODE=docker|bare"
-	@echo "  make logs-vault MODE=docker|bare"
-	@echo "  # Same pattern for: gitea, gitlab, nexus, api, jenkins, nginx, ollama, chatbot"
-	@echo ""
+	@for svc in $(SERVICES); do \
+		echo "  $$svc:"; \
+		echo "    make up-$$svc MODE=docker|bare"; \
+		echo "    make down-$$svc MODE=docker|bare"; \
+		echo "    make status-$$svc MODE=docker|bare"; \
+		echo "    make logs-$$svc MODE=docker|bare"; \
+		echo ""; \
+	done
 	@echo "Service start order: $(START_ORDER)"
 	@echo "Service stop order:  $(STOP_ORDER)"
 	@echo "Devops start order:  $(DEVOPS_ORDER)"

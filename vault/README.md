@@ -5,6 +5,10 @@
 > Do not expose any part of it to the public internet.
 > It uses insecure defaults such as default passwords and other convenience settings that are only acceptable for isolated local testing.
 
+> [!IMPORTANT]
+> Parts of this repository were generated with AI assistance.
+> Review generated code and configuration carefully before using or modifying it.
+
 Manage HashiCorp Vault (Open-Source Edition) with one Makefile:
 
 - `make up MODE=docker` to run Vault in Docker

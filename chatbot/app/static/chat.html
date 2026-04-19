@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DevOps Playground Chat Lab</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body data-page="chat">
+    <header class="hero hero-chat">
+      <div class="hero-overlay"></div>
+      <div class="shell topbar">
+        <nav class="topnav" aria-label="Primary">
+          <a class="nav-link is-active" href="/chat">Chat</a>
+          <a class="nav-link" href="/ingest">Ingest</a>
+        </nav>
+      </div>
+      <div class="shell hero-content">
+        <div class="hero-copy">
+          <h1>Chat</h1>
+          <p class="hero-text">Ask a question, choose retrieval and provider, inspect the result.</p>
+        </div>
+      </div>
+    </header>
+
+    <main class="shell workspace">
+      <section class="panel panel-wide">
+        <div class="section-heading">
+          <div>
+            <h2>Question</h2>
+          </div>
+          <a class="ghost-link" href="/ingest">Ingest</a>
+        </div>
+
+        <form id="chat-form" class="chat-layout">
+          <section class="console-surface composer">
+            <label for="message">Question or command</label>
+            <textarea id="message" required>How are you?</textarea>
+            <p class="hint">Press Enter to send. Press Shift+Enter for a new line.</p>
+
+            <div class="form-grid">
+              <div id="provider-block">
+                <label for="provider">Provider</label>
+                <select id="provider">
+                  <option value="">Configured default</option>
+                  <option value="local">local</option>
+                  <option value="openai">openai</option>
+                  <option value="anthropic">anthropic</option>
+                </select>
+              </div>
+              <div id="model-block">
+                <label for="model">Model</label>
+                <input id="model" placeholder="optional">
+              </div>
+              <div id="mode-block">
+                <label for="mode">Mode</label>
+                <select id="mode">
+                  <option value="normal">Normal</option>
+                  <option value="force_llm">Force LLM</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="toggle-row">
+              <label class="switch"><input id="use-rag" type="checkbox" checked><span>Use RAG</span></label>
+              <label class="switch"><input id="use-local-files" type="checkbox"><span>Use local files</span></label>
+              <label class="switch"><input id="use-web" type="checkbox"><span>Use web search</span></label>
+              <label class="switch"><input id="compare-mode" type="checkbox"><span>Compare profiles</span></label>
+            </div>
+
+            <button id="send" class="primary-action" type="submit">Run query</button>
+          </section>
+
+          <aside class="control-stack">
+            <section id="retrieval-profile-block" class="control-block">
+              <label for="retrieval-profile">Retrieval profile</label>
+              <select id="retrieval-profile"></select>
+            </section>
+
+            <section id="compare-profiles-block" class="control-block">
+              <label for="compare-profiles">Compare retrieval profiles</label>
+              <select id="compare-profiles" multiple></select>
+              <label class="switch inline-switch"><input id="compare-select-all" type="checkbox"><span>Select all compare profiles</span></label>
+            </section>
+          </aside>
+        </form>
+      </section>
+
+      <section class="results-layout">
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>Answer</h2>
+            </div>
+          </div>
+          <pre id="answer" class="terminal-display">Waiting for a question.</pre>
+        </section>
+
+        <section class="panel">
+          <div class="section-heading">
+            <div>
+              <h2>Metadata</h2>
+            </div>
+          </div>
+          <pre id="metadata" class="terminal-display meta-display">{}</pre>
+        </section>
+      </section>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
