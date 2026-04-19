@@ -49,9 +49,6 @@ def base_config(tmp_path: Path) -> dict:
             "top_k": 3,
             "chunk_size": 200,
             "chunk_overlap": 20,
-            "min_query_chars": 4,
-            "min_query_tokens": 2,
-            "min_score": 0.25,
         },
         "history": {
             "enabled": True,
@@ -175,19 +172,19 @@ def test_ingestion_accepts_selected_profiles(tmp_path: Path) -> None:
     docs.mkdir()
     (docs / "note.txt").write_text("Jenkins job status can be read from its REST API.", encoding="utf-8")
 
-    result = ingest_paths(config, ["docs"], reset=True, profiles=["sqlite", "qdrant_local_hash"])
+    result = ingest_paths(config, ["docs"], reset=True, profiles=["sqlite", "qdrant_openai"])
 
-    assert result["profiles"] == ["sqlite", "qdrant_local_hash"]
+    assert result["profiles"] == ["sqlite", "qdrant_openai"]
     assert result["ingested"][0]["profile_results"]["sqlite"]["stored"] is True
-    assert result["ingested"][0]["profile_results"]["qdrant_local_hash"]["stored"] is False
+    assert result["ingested"][0]["profile_results"]["qdrant_openai"]["stored"] is False
 
 
-def test_concrete_ingest_profiles_expands_hybrid(tmp_path: Path) -> None:
+def test_concrete_ingest_profiles_keeps_profiles_standalone(tmp_path: Path) -> None:
     config = base_config(tmp_path)
 
-    profiles = concrete_ingest_profiles(config, ["hybrid"])
+    profiles = concrete_ingest_profiles(config, ["qdrant_openai", "sqlite"])
 
-    assert [profile["name"] for profile in profiles] == ["qdrant_local_hash", "sqlite"]
+    assert [profile["name"] for profile in profiles] == ["qdrant_openai", "sqlite"]
 
 
 def test_openai_embedding_uses_api_key(tmp_path: Path, monkeypatch) -> None:
@@ -301,7 +298,7 @@ def test_direct_question_gets_answer_from_llm_with_rag_context(tmp_path: Path, m
     assert response.answer == "Gordon Engelke is the author and maintainer of the DevOps Playground."
     assert captured["message"] == "Who is Gordon Engelke?"
     assert "Gordon Engelke is the author" in captured["context"][0]["text"]
-    assert response.metadata["retrieval"]["profile"] == "hybrid"
+    assert response.metadata["retrieval"]["profile"] == "sqlite"
 
 
 def test_relation_question_is_handled_by_llm_with_rag_context(tmp_path: Path, monkeypatch) -> None:
@@ -340,36 +337,23 @@ def test_provider_specific_default_model_wins_for_provider_override(tmp_path: Pa
     assert model == "gpt-4.1-mini"
 
 
-def test_qdrant_search_ignores_too_short_queries(tmp_path: Path) -> None:
+def test_qdrant_search_ignores_empty_queries(tmp_path: Path) -> None:
     config = base_config(tmp_path)
-    config["qdrant"] = {
-        "enabled": True,
-        "min_query_chars": 4,
-        "min_query_tokens": 2,
-    }
+    config["qdrant"] = {"enabled": True}
 
-    assert search_qdrant(config, "x") == []
+    assert search_qdrant(config, "") == []
 
 
-def test_qdrant_search_reranks_exact_command_chunk(tmp_path: Path, monkeypatch) -> None:
+def test_qdrant_search_returns_provider_order_without_rerank(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
-    config["qdrant"] = {
-        "enabled": True,
-        "min_query_chars": 4,
-        "min_query_tokens": 2,
-        "min_score": 0.2,
-        "candidate_multiplier": 5,
-        "min_candidates": 20,
-        "lexical_rerank_weight": 2.0,
-        "lexical_min_score": 0.45,
-    }
+    config["qdrant"] = {"enabled": True}
     config["retrieval"] = {
         "profiles": [
             {
-                "name": "qdrant_local_hash",
+                "name": "qdrant_openai",
                 "type": "qdrant",
                 "collection": "test_chunks",
-                "embedding": {"provider": "local_hash", "model": "local-hash-96", "vector_size": 96},
+                "embedding": {"provider": "openai", "model": "text-embedding-3-small", "vector_size": 1536},
             }
         ]
     }
@@ -382,7 +366,7 @@ def test_qdrant_search_reranks_exact_command_chunk(tmp_path: Path, monkeypatch) 
     class FakeClient:
         def search(self, collection_name, query_vector, limit):
             assert collection_name == "test_chunks"
-            assert limit == 20
+            assert limit == 1
             return [
                 FakePoint(0.90, "The DevOps Playground is a local playground."),
                 FakePoint(0.80, "The playground includes Vault, Gitea, Jenkins, and Ollama."),
@@ -391,11 +375,11 @@ def test_qdrant_search_reranks_exact_command_chunk(tmp_path: Path, monkeypatch) 
 
     monkeypatch.setattr("app.retrieval.ensure_qdrant_collection", lambda *args, **kwargs: True)
     monkeypatch.setattr("app.retrieval.get_qdrant_client", lambda _config: FakeClient())
-    monkeypatch.setattr("app.retrieval.embed_with_profile", lambda *args, **kwargs: ([0.1] * 96, {}))
+    monkeypatch.setattr("app.retrieval.embed_with_profile", lambda *args, **kwargs: ([0.1] * 1536, {}))
 
-    chunks = search_qdrant(config, "how do i start the devops playground", limit=1, profile_name="qdrant_local_hash")
+    chunks = search_qdrant(config, "how do i start the devops playground", limit=1, profile_name="qdrant_openai")
 
-    assert chunks[0].text == "How do I start the DevOps Playground? Run make all MODE=docker."
+    assert chunks[0].text == "The DevOps Playground is a local playground."
 
 
 def test_tokenizer_splits_uploaded_file_names() -> None:
@@ -415,7 +399,7 @@ def test_sqlite_search_uses_source_path_tokens(tmp_path: Path) -> None:
     assert chunks[0].source_path == "docs/python_leitfaden.txt"
 
 
-def test_force_llm_without_rag_does_not_add_sqlite_context(tmp_path: Path) -> None:
+def test_generation_question_without_rag_does_not_add_sqlite_context(tmp_path: Path) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -423,22 +407,22 @@ def test_force_llm_without_rag_does_not_add_sqlite_context(tmp_path: Path) -> No
     ingest_paths(config, ["docs"], reset=True)
 
     service = ChatService(config)
-    response = service.answer(ChatRequest(message="Explain Jenkins REST status", use_rag=False, force_llm=True))
+    response = service.answer(ChatRequest(message="Explain Jenkins REST status", use_rag=False))
 
     assert response.source == "llm_error"
     assert response.metadata["context"] == []
 
 
-def test_rag_only_returns_empty_instead_of_llm_for_no_match(tmp_path: Path) -> None:
+def test_rag_returns_empty_instead_of_llm_for_no_match(tmp_path: Path) -> None:
     service = ChatService(base_config(tmp_path))
-    response = service.answer(ChatRequest(message="popel", provider="openai", use_rag=True, rag_only=True))
+    response = service.answer(ChatRequest(message="popel", provider="openai", use_rag=True))
 
     assert response.source == "rag_empty"
     assert response.provider is None
     assert response.metadata["context"] == []
 
 
-def test_rag_only_calls_llm_when_retrieval_matches(tmp_path: Path, monkeypatch) -> None:
+def test_rag_calls_llm_when_retrieval_matches(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -451,13 +435,13 @@ def test_rag_only_calls_llm_when_retrieval_matches(tmp_path: Path, monkeypatch) 
     monkeypatch.setattr("app.chat.call_llm", fake_llm)
 
     service = ChatService(config)
-    response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True, rag_only=True, force_llm=True))
+    response = service.answer(ChatRequest(message="Jenkins REST status", use_rag=True))
 
     assert response.source == "llm"
     assert "Jenkins job status" in response.answer
 
 
-def test_rag_only_skips_configured_local_file_source(tmp_path: Path, monkeypatch) -> None:
+def test_rag_skips_configured_local_file_source(tmp_path: Path, monkeypatch) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -483,7 +467,7 @@ def test_rag_only_skips_configured_local_file_source(tmp_path: Path, monkeypatch
     monkeypatch.setattr("app.chat.call_llm", fake_llm)
 
     service = ChatService(config)
-    response = service.answer(ChatRequest(message="Does Gordon have Jenkins in playground?", use_rag=True, rag_only=True))
+    response = service.answer(ChatRequest(message="Does Gordon have Jenkins in playground?", use_rag=True))
 
     assert response.source == "llm"
     assert response.answer == "Jenkins is mentioned in the playground document."
@@ -587,39 +571,6 @@ def test_local_files_mode_ranks_across_multiple_sources(tmp_path: Path) -> None:
     assert response.source == "local_file"
     assert "Directory embeddings support semantic retrieval" in response.answer
     assert "You can also work inside a service directory" not in response.answer
-
-
-def test_local_files_retrieval_profile_returns_file_answer_without_llm(tmp_path: Path, monkeypatch) -> None:
-    config = base_config(tmp_path)
-    docs = tmp_path / "docs"
-    docs.mkdir()
-    (docs / "faq.md").write_text(
-        "## Who is the author?\n\nGordon Engelke is the author and maintainer of the DevOps Playground.",
-        encoding="utf-8",
-    )
-    config["local_files"] = [
-        {
-            "name": "docs",
-            "enabled": True,
-            "path": "docs",
-            "max_files": 10,
-            "max_chars": 1200,
-            "match": {"patterns": ["author"]},
-        }
-    ]
-
-    def fake_llm(*args, **kwargs):
-        raise AssertionError("local_files retrieval profile should not call the LLM")
-
-    monkeypatch.setattr("app.chat.call_llm", fake_llm)
-
-    service = ChatService(config)
-    response = service.answer(ChatRequest(message="who is the author", retrieval_profile="local_files", use_rag=True))
-
-    assert response.source == "local_file"
-    assert "Gordon Engelke is the author" in response.answer
-    assert response.metadata["retrieval"]["profile"] == "local_files"
-    assert response.metadata["context"][0]["source"].startswith("local_files:local_files:")
 
 
 def test_local_files_and_rag_are_mutually_exclusive(tmp_path: Path) -> None:
@@ -729,8 +680,8 @@ def test_compare_runs_each_retrieval_profile(tmp_path: Path, monkeypatch) -> Non
     monkeypatch.setattr("app.chat.call_llm", fake_llm)
 
     service = ChatService(config)
-    result = service.compare(ChatRequest(message="Jenkins REST status"), ["sqlite", "qdrant_local_hash"])
+    result = service.compare(ChatRequest(message="Jenkins REST status"), ["sqlite", "qdrant_openai"])
 
-    assert [item["retrieval_profile"] for item in result["results"]] == ["sqlite", "qdrant_local_hash"]
+    assert [item["retrieval_profile"] for item in result["results"]] == ["sqlite", "qdrant_openai"]
     assert result["results"][0]["source"] == "llm"
     assert result["results"][1]["source"] == "rag_empty"

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import math
 import os
 import re
 from contextlib import contextmanager
@@ -11,7 +9,6 @@ import requests
 
 
 TOKEN_RE = re.compile(r"[A-Za-z0-9äöüÄÖÜß]+")
-DEFAULT_VECTOR_SIZE = 96
 TLS_CERT_ENV_VARS = ("SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "PIP_CERT")
 
 
@@ -19,31 +16,8 @@ def tokenize(text: str) -> list[str]:
     return [token.lower() for token in TOKEN_RE.findall(text.replace("_", " ").replace("-", " "))]
 
 
-def embed_local_hash(text: str, size: int = DEFAULT_VECTOR_SIZE) -> list[float]:
-    """Small deterministic embedding so RAG works without an external model."""
-    vector = [0.0] * size
-    for token in tokenize(text):
-        digest = hashlib.sha256(token.encode("utf-8")).digest()
-        index = int.from_bytes(digest[:4], "big") % size
-        sign = 1.0 if digest[4] % 2 == 0 else -1.0
-        vector[index] += sign
-
-    length = math.sqrt(sum(value * value for value in vector))
-    if not length:
-        return vector
-    return [value / length for value in vector]
-
-
-def embed_text(config: dict[str, Any], embedding: dict[str, Any], text: str, input_type: str | None = None) -> tuple[list[float], dict[str, Any]]:
-    provider = embedding.get("provider", "local_hash")
-    model = embedding.get("model", "local-hash-96")
-    if provider == "local_hash":
-        size = int(embedding.get("vector_size", DEFAULT_VECTOR_SIZE))
-        return embed_local_hash(text, size=size), {
-            "provider": provider,
-            "model": model,
-            "vector_size": size,
-        }
+def embed_text(config: dict[str, Any], embedding: dict[str, Any], text: str) -> tuple[list[float], dict[str, Any]]:
+    provider = embedding.get("provider")
     if provider == "openai":
         return embed_openai(config, embedding, text)
     if provider == "ollama":

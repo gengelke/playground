@@ -55,7 +55,9 @@ chatbot/
     sources.py       rules, tools, files, REST, SQLite, web search
     static/chat.html
     static/ingest.html
-    static/app.js
+    static/common.js
+    static/chat.js
+    static/ingest.js
     static/styles.css
     static/index.html redirect to /chat
   config/config.yml
@@ -160,9 +162,9 @@ python -m app.cli history clear
 Select a provider and model:
 
 ```bash
-python -m app.cli ask "Explain these Jenkins notes" --provider openai --model gpt-4.1-mini --force-llm
-python -m app.cli ask "Explain these Jenkins notes" --provider anthropic --model claude-sonnet-4-6 --force-llm
-python -m app.cli ask "Explain these Jenkins notes" --provider local --model llama3.1 --force-llm
+python -m app.cli ask "Explain these Jenkins notes" --provider openai --model gpt-4.1-mini
+python -m app.cli ask "Explain these Jenkins notes" --provider anthropic --model claude-sonnet-4-6
+python -m app.cli ask "Explain these Jenkins notes" --provider local --model llama3.1
 ```
 
 If no provider or model is supplied, `config/config.yml` decides.
@@ -171,14 +173,14 @@ Ask with a specific retrieval profile:
 
 ```bash
 python -m app.cli ask "Who maintains the playground?" --retrieval-profile sqlite --provider openai --model gpt-4.1-mini
-python -m app.cli ask "Who maintains the playground?" --retrieval-profile qdrant_local_hash --provider openai --model gpt-4.1-mini
+python -m app.cli ask "Who maintains the playground?" --retrieval-profile qdrant_openai --provider openai --model gpt-4.1-mini
 ```
 
 Compare the same question against multiple retrieval profiles:
 
 ```bash
 python -m app.cli compare "Who maintains the playground?" \
-  --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai \
+  --profiles sqlite,qdrant_openai,qdrant_ollama \
   --provider anthropic
 ```
 
@@ -280,16 +282,14 @@ curl -s http://localhost:8088/api/chat \
     "message": "Explain what the playground note says about Jenkins",
     "provider": "local",
     "model": "llama3.1",
-    "use_rag": true,
-    "force_llm": true
+    "use_rag": true
   }' | jq
 ```
 
 With `use_rag`, the chatbot retrieves RAG context from SQLite/Qdrant. If context
 is found, the selected LLM answers using only that retrieved context. If no
 relevant context is found, the response source is `rag_empty` and no LLM provider
-is called. The older `rag_only` request field is still accepted for compatibility
-and has the same strict-RAG behavior.
+is called.
 
 For local-file-only answers, use `use_local_files` and do not set `use_rag`:
 
@@ -329,40 +329,32 @@ knowledge sources and embedding strategies. The configured profiles live in
 This is intended for direct RAG experiments. You can keep the answering model
 the same, for example Anthropic or OpenAI, and change only the retrieval
 profile. That lets you compare whether the answer changes because the chatbot
-used direct local files, SQLite token matching, Qdrant with the built-in local
-hash vectors, Qdrant with OpenAI embeddings, Qdrant with Ollama embeddings, or
-Qdrant with OpenAI embeddings for Anthropic-backed answering.
+used SQLite token matching, Qdrant with OpenAI embeddings, or Qdrant with
+Ollama embeddings.
 
 The default profiles are:
 
-- `local_files`: reads configured local files directly.
 - `sqlite`: searches ingested SQLite chunks by token overlap.
-- `hybrid`: searches `qdrant_local_hash` and `sqlite`, then merges results.
-- `qdrant_local_hash`: searches Qdrant vectors created with the built-in local
-  hash embedding.
 - `qdrant_openai`: searches a separate Qdrant collection created with OpenAI
   embeddings.
 - `qdrant_ollama`: searches a separate Qdrant collection created with Ollama
   embeddings.
-- `qdrant_anthropic_openai`: searches a separate Qdrant collection created with
-  OpenAI embeddings and is intended for Anthropic answer generation paired with
-  a real embedding model already present in this setup.
 
-Each Qdrant embedding strategy uses its own collection. Do not mix local hash,
-OpenAI, and Ollama embeddings in one Qdrant collection because their vectors
-are not comparable.
+Each Qdrant embedding strategy uses its own collection. Do not mix OpenAI and
+Ollama embeddings in one Qdrant collection because their vectors are not
+comparable.
 
 OpenAI embedding ingestion requires `OPENAI_API_KEY`. Ollama embedding ingestion
 uses `nomic-embed-text`; the chatbot Makefile pulls that model when it starts
-the sibling Ollama service. Anthropic does not provide its own embedding model;
-the `qdrant_anthropic_openai` profile reuses OpenAI embeddings so Anthropic
-answers can still run against a real semantic retrieval index.
+the sibling Ollama service. Anthropic does not provide its own embedding model
+here; use `qdrant_openai` when answering with Anthropic against OpenAI-embedded
+documents.
 
 Retrieval profiles are not LLM providers. For example,
-`qdrant_anthropic_openai` controls where context is retrieved from; the selected
-provider still controls which LLM answers. If `provider=anthropic` is selected
-without `ANTHROPIC_API_KEY`, the chatbot returns `source=llm_error` and keeps
-the retrieved context in metadata for debugging instead of presenting raw RAG
+`qdrant_openai` controls where context is retrieved from; the selected provider
+still controls which LLM answers. If `provider=anthropic` is selected without
+`ANTHROPIC_API_KEY`, the chatbot returns `source=llm_error` and keeps the
+retrieved context in metadata for debugging instead of presenting raw RAG
 context as if it were an Anthropic answer.
 
 List configured profiles:
@@ -394,7 +386,7 @@ curl -s http://localhost:8088/api/chat/compare \
     "message": "Who maintains the playground?",
     "provider": "openai",
     "model": "gpt-4.1-mini",
-    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai", "qdrant_anthropic_openai"]
+    "retrieval_profiles": ["sqlite", "qdrant_openai", "qdrant_ollama"]
   }' | jq
 ```
 
@@ -406,7 +398,7 @@ The compare response is useful because it shows more than the final text. For
 each selected profile, inspect:
 
 - `answer`: what the selected LLM answered from the retrieved context.
-- `metadata.context`: which chunks or local-file snippets were sent to the LLM.
+- `metadata.context`: which chunks were sent to the LLM.
 - `metadata.retrieval.profile`: which profile was used.
 - `metadata.retrieval.embedding`: which embedding provider/model was used for
   Qdrant profiles.
@@ -415,41 +407,35 @@ each selected profile, inspect:
 
 This separation is important: retrieval profiles decide which data reaches the
 LLM, while `provider` and `model` decide which LLM writes the final answer.
-Changing only the retrieval profile is the easiest way to compare local files,
-SQLite, homemade vectors, and real embeddings against the same question.
+Changing only the retrieval profile is the easiest way to compare SQLite,
+OpenAI embeddings, and Ollama embeddings against the same question. Direct
+local files are controlled separately through local-file mode because they do
+not require ingestion or vector retrieval.
 
 ## Ingestion Flow
 
-Ingestion stores chunks in SQLite and, when Qdrant is enabled and reachable,
-also stores vectors in the selected Qdrant retrieval profiles. The default
-ingest profiles are `sqlite` and `qdrant_local_hash`, so normal ingestion still
-works without OpenAI, Anthropic, or a local LLM.
+Ingestion stores chunks in SQLite and, when selected, stores vectors in Qdrant
+retrieval profiles. The default ingest profile is `sqlite`, so normal ingestion
+works without OpenAI, Anthropic, Ollama embeddings, or Qdrant writes. Select
+`qdrant_openai` or `qdrant_ollama` when you want vector retrieval.
 
-SQLite and Qdrant retrieval have simple relevance gates in `config/config.yml`:
-`min_query_chars`, `min_query_tokens`, and `min_score`. This prevents very short
-or unrelated questions from always returning stored chunks. The `use_rag` flag
-controls whether document chunks are added to LLM context. Raw chunks are only
-returned as a fallback if the selected LLM is unavailable.
-
-Qdrant retrieval first asks Qdrant for more candidates than the final `top_k`
-and then applies a small language-agnostic lexical rerank. This helps direct
-command questions such as "how do I start the playground" surface chunks that
-contain the matching command, even when the raw vector score ranks a broader
-overview chunk higher. The relevant knobs are `candidate_multiplier`,
-`min_candidates`, `lexical_rerank_weight`, and `lexical_min_score` under
-`qdrant` in `config/config.yml`. Set `lexical_rerank_weight` to `0` if you want
-to inspect raw vector ranking only.
+SQLite retrieval uses plain token overlap against chunk text and basic metadata.
+Qdrant retrieval embeds the question, asks Qdrant for the nearest vectors, and
+returns Qdrant results in Qdrant's order. There is no hybrid profile, score
+scaling, candidate over-fetching, or lexical reranking layer in the chatbot.
+Each retrieval profile is standalone. The `use_rag` flag controls whether
+document chunks are added to LLM context.
 
 ```bash
 python -m app.cli ingest sample_docs --reset
-python -m app.cli ingest sample_docs --reset --profiles sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai
+python -m app.cli ingest sample_docs --reset --profiles sqlite,qdrant_openai,qdrant_ollama
 python -m app.cli ask "Jenkins REST API playground note"
 ```
 
 The Makefile helper accepts the same profile list:
 
 ```bash
-make ingest PATHS='sample_docs' PROFILES='sqlite,qdrant_local_hash,qdrant_openai,qdrant_anthropic_openai'
+make ingest PATHS='sample_docs' PROFILES='sqlite,qdrant_openai,qdrant_ollama'
 ```
 
 PDFs can be ingested from the CLI the same way. The PDF is prepared into
@@ -613,13 +599,12 @@ The difference is how the chunks are searched:
   and the chunk metadata.
 - Qdrant stores a vector for each chunk plus the chunk text as payload. Qdrant
   retrieval searches by vector similarity.
-- Hybrid retrieval searches both, merges the best matches, removes obvious
-  duplicates, and returns only the best `top_k` chunks.
 
-When `use_rag` is enabled, the chatbot searches SQLite and Qdrant, takes the
-best matching chunks, sends those chunks as context to the selected LLM, and
-asks the LLM to answer from that context. The LLM does not automatically know
-about every ingested file. It only sees the chunks that retrieval selected.
+When `use_rag` is enabled, the chatbot searches the selected retrieval profile,
+takes the best matching chunks, sends those chunks as context to the selected
+LLM, and asks the LLM to answer from that context. The LLM does not
+automatically know about every ingested file. It only sees the chunks that
+retrieval selected.
 
 That means chunk quality directly affects answer quality:
 
@@ -708,21 +693,8 @@ question
 The current implementation supports multiple embedding strategies through
 retrieval profiles:
 
-- `qdrant_local_hash`: small deterministic local token-hash vectors
 - `qdrant_openai`: OpenAI embeddings
 - `qdrant_ollama`: Ollama embeddings via `nomic-embed-text`
-- `qdrant_anthropic_openai`: OpenAI embeddings paired with Anthropic answer
-  generation
-
-The local-hash embedding keeps ingestion fully local and makes Qdrant usable
-without API keys, internet access, or a separately downloaded embedding model.
-It tokenizes the text, hashes the tokens into a fixed-size vector, and
-normalizes that vector.
-
-That local embedding is useful as a simple baseline, but it is not as
-semantically strong as a real embedding model. It works best when the question
-and the stored chunks share related words. It is weaker for synonyms,
-paraphrases, multilingual meaning, and deeper semantic similarity.
 
 Real embedding models are already supported and generally improve retrieval
 quality. Common production-style setups use a dedicated embedding model for
@@ -753,14 +725,16 @@ also match the selected embedding model. This is already configured per profile
 under `retrieval.profiles`, for example:
 
 ```yaml
-- name: qdrant_local_hash
+- name: qdrant_openai
   type: qdrant
-  collection: chatbot_chunks_local_hash
+  collection: chatbot_chunks_openai
   embedding:
-    provider: local_hash
-    model: local-hash-96
-    vector_size: 96
+    provider: openai
+    model: text-embedding-3-small
+    vector_size: 1536
+```
 
+```yaml
 - name: qdrant_ollama
   type: qdrant
   collection: chatbot_chunks_ollama
@@ -783,8 +757,7 @@ operational cost differently.
 | --- | --- | --- | --- | --- |
 | Direct local files | Simple access to configured files | Ranking, semantics, large corpora | Fast for small folders | Lowest |
 | SQLite chunks | Exact names, commands, ports, config keys | Synonyms and paraphrases | Fast for small and medium corpora | Low |
-| Qdrant with local vectors | Fully local vector path | Real semantic meaning | Fast | Medium |
-| Qdrant with real embeddings | Semantic search and natural language | Setup, model/API cost, reingestion discipline | Fast search, slower ingest | Highest |
+| Qdrant with embeddings | Semantic search and natural language | Setup, model/API cost, reingestion discipline | Fast search, slower ingest | Highest |
 
 Direct local files are the simplest option. The chatbot reads configured
 folders and returns snippets from matching files. This does not require
@@ -802,18 +775,10 @@ as `jenkins`, `gitea`, `vault`, `CHATBOT_PORT`, `OPENAI_API_KEY`, or
 but it is mostly literal and weaker when the question uses different words than
 the document.
 
-Qdrant with the current local vectoring stores the same chunks as vectors in
-Qdrant, using the deterministic local embedding function. This gives the
-chatbot a real Qdrant retrieval path without external APIs, downloaded
-embedding models, or extra provider configuration. It is useful as a fully local
-bridge and keeps the architecture ready for stronger embeddings later. The
-quality is limited because the local vectoring is not a trained semantic model.
-It works best when the question and chunk share related words.
-
-Qdrant with real embeddings is the highest-quality RAG direction. A trained
-embedding model can place related meanings close together even when wording is
-different. This is better for READMEs, FAQs, PDFs, ebooks, uploaded documents,
-and natural-language questions. It also adds operational cost: an embedding
+Qdrant with embeddings is the semantic RAG direction. A trained embedding model
+can place related meanings close together even when wording is different. This
+is better for READMEs, FAQs, PDFs, ebooks, uploaded documents, and
+natural-language questions. It also adds operational cost: an embedding
 provider must be configured, embedding dimensions must match the Qdrant
 collection, ingestion is slower, and changing the embedding model requires
 resetting and reingesting the RAG corpus.
@@ -839,13 +804,11 @@ Operational complexity increases in this order:
 ```text
 direct local files
   -> SQLite chunks
-  -> Qdrant with local vectors
-  -> Qdrant with real embeddings
+  -> Qdrant with embeddings
 ```
 
 Ingestion cost increases in the same order. Direct local files require no
-ingestion. SQLite stores chunk text. Qdrant with local vectors stores chunk text
-plus cheap local vectors. Qdrant with real embeddings stores larger vectors and
+ingestion. SQLite stores chunk text. Qdrant stores chunk text plus vectors and
 must call an embedding model or API for every chunk.
 
 The most useful mature setup for this chatbot is likely a combination:
@@ -856,10 +819,6 @@ SQLite for exact and fallback retrieval
 Qdrant with real embeddings for semantic retrieval
 LLM for final answer synthesis
 ```
-
-The current local Qdrant vectoring is intentionally simple. It keeps the service
-standalone and validates the Qdrant integration, but it should be treated as a
-starter retrieval path rather than production-quality semantic search.
 
 ## Reset vs Append Ingestion
 
@@ -1050,7 +1009,7 @@ issues, request validation errors, or provider-side failures.
 For Docker Compose, start from the provided environment template:
 
 ```bash
-cp .env.template .env
+cp .env.example .env
 ```
 
 Then edit `.env` locally and set only the providers you want to use. Do not

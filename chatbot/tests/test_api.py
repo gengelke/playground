@@ -68,20 +68,20 @@ def test_retrieval_profiles_endpoint() -> None:
     data = response.json()
     names = {profile["name"] for profile in data["profiles"]}
     assert "sqlite" in names
-    assert "qdrant_local_hash" in names
-    assert "qdrant_anthropic_openai" in names
+    assert "qdrant_openai" in names
+    assert "qdrant_ollama" in names
 
 
 def test_chat_compare_endpoint() -> None:
     client = TestClient(app)
     response = client.post(
         "/api/chat/compare",
-        json={"message": "How are you?", "retrieval_profiles": ["sqlite", "qdrant_local_hash"]},
+        json={"message": "How are you?", "retrieval_profiles": ["sqlite", "qdrant_openai"]},
     )
 
     assert response.status_code == 200
     data = response.json()
-    assert [item["retrieval_profile"] for item in data["results"]] == ["sqlite", "qdrant_local_hash"]
+    assert [item["retrieval_profile"] for item in data["results"]] == ["sqlite", "qdrant_openai"]
 
 
 def test_upload_ingest_endpoint() -> None:

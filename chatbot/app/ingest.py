@@ -219,24 +219,19 @@ def split_pdf_sections(config: dict[str, Any], pages: list[PdfPageText]) -> list
     current_pages: list[int] = []
     current_title = "section"
 
-    def flush() -> None:
-        nonlocal current_lines, current_pages, current_title
-        text = "\n".join(current_lines).strip()
-        if text:
-            sections.append({"title": current_title, "pages": current_pages[:], "text": text})
-        current_lines = []
-        current_pages = []
-        current_title = "section"
-
     for page in pages:
         page_heading = f"Page {page.page_number}"
         for block in page.text.split("\n\n"):
             block = block.strip()
             if not block:
                 continue
+
             if is_probable_heading(block) and len("\n".join(current_lines)) >= min_chars:
-                flush()
-                current_title = block
+                # Heading encountered with enough content — save section and start a new one.
+                text = "\n".join(current_lines).strip()
+                if text:
+                    sections.append({"title": current_title, "pages": current_pages[:], "text": text})
+                current_lines, current_pages, current_title = [], [], block
             elif not current_lines:
                 current_title = block if is_probable_heading(block) else page_heading
 
@@ -245,9 +240,17 @@ def split_pdf_sections(config: dict[str, Any], pages: list[PdfPageText]) -> list
             current_lines.append(block)
 
             if len("\n".join(current_lines)) >= max_chars:
-                flush()
+                # Section reached size limit — save and start fresh.
+                text = "\n".join(current_lines).strip()
+                if text:
+                    sections.append({"title": current_title, "pages": current_pages[:], "text": text})
+                current_lines, current_pages, current_title = [], [], "section"
 
-    flush()
+    # Save whatever remains.
+    text = "\n".join(current_lines).strip()
+    if text:
+        sections.append({"title": current_title, "pages": current_pages[:], "text": text})
+
     return sections
 
 
@@ -388,7 +391,7 @@ def main() -> None:
     parser.add_argument("paths", nargs="+", help="Files or directories to ingest.")
     parser.add_argument("--config", default=None, help="Path to config.yml.")
     parser.add_argument("--reset", action="store_true", help="Clear existing chunks before ingesting.")
-    parser.add_argument("--profiles", default=None, help="Comma-separated retrieval profiles to ingest, for example sqlite,qdrant_local_hash.")
+    parser.add_argument("--profiles", default=None, help="Comma-separated retrieval profiles to ingest, for example sqlite,qdrant_openai.")
     args = parser.parse_args()
 
     config = load_config(args.config)

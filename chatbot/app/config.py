@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 import re
-from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -63,5 +62,3 @@ def resolve_path(config: dict[str, Any], path_value: str | Path) -> Path:
     return Path(config.get("_project_root", PROJECT_ROOT)) / path
 
 
-def copy_config(config: dict[str, Any]) -> dict[str, Any]:
-    return deepcopy(config)

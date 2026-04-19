@@ -67,23 +67,18 @@ def call_local(config: dict[str, Any], prompt: str, model: str) -> LLMResult:
     base_url = local.get("base_url", "http://localhost:11434/api/chat")
     timeout = float(local.get("timeout_seconds", 30))
     try:
-        if "chat/completions" in base_url:
-            response = requests.post(
-                base_url,
-                json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
+        response = requests.post(
+            base_url,
+            json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        # OpenAI-compatible format (e.g. vLLM, LM Studio) uses data["choices"]
+        # Ollama native format uses data["message"]["content"] or data["response"]
+        if "choices" in data:
             answer = data["choices"][0]["message"]["content"]
         else:
-            response = requests.post(
-                base_url,
-                json={"model": model, "messages": [{"role": "user", "content": prompt}], "stream": False},
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            data = response.json()
             answer = data.get("message", {}).get("content") or data.get("response", "")
         return LLMResult(answer.strip(), "local", model, {"base_url": base_url})
     except Exception as exc:

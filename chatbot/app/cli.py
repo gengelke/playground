@@ -7,7 +7,7 @@ import os
 from app.chat import ChatService
 from app.config import load_config
 from app.history import clear_history, delete_history_item, get_history_item, list_history
-from app.ingest import ingest_paths
+from app.ingest import ingest_paths, split_profiles
 from app.models import ChatRequest
 
 
@@ -22,10 +22,8 @@ def main() -> None:
     ask.add_argument("--model", default=None)
     ask.add_argument("--retrieval-profile", default=None)
     ask.add_argument("--no-rag", action="store_true")
-    ask.add_argument("--rag-only", action="store_true")
     ask.add_argument("--local-files", action="store_true", help="Use configured local file sources only.")
     ask.add_argument("--web-search", action="store_true")
-    ask.add_argument("--force-llm", action="store_true")
     ask.add_argument("--command-token", default=None, help="Bearer token for Simon says commands.")
     ask.add_argument("--json", action="store_true")
 
@@ -34,7 +32,6 @@ def main() -> None:
     shell.add_argument("--model", default=None)
     shell.add_argument("--retrieval-profile", default=None)
     shell.add_argument("--no-rag", action="store_true")
-    shell.add_argument("--rag-only", action="store_true")
     shell.add_argument("--local-files", action="store_true", help="Use configured local file sources only.")
     shell.add_argument("--web-search", action="store_true")
     shell.add_argument("--command-token", default=None, help="Bearer token for Simon says commands.")
@@ -49,7 +46,6 @@ def main() -> None:
     compare.add_argument("--profiles", required=True, help="Comma-separated retrieval profiles to compare.")
     compare.add_argument("--provider", default=None)
     compare.add_argument("--model", default=None)
-    compare.add_argument("--force-llm", action="store_true")
     compare.add_argument("--command-token", default=None, help="Bearer token for Simon says commands.")
 
     history = subparsers.add_parser("history", help="Show or clear question history.")
@@ -91,7 +87,6 @@ def main() -> None:
                 provider=args.provider,
                 model=args.model,
                 command_token=args.command_token or os.getenv("CHATBOT_COMMAND_TOKEN"),
-                force_llm=args.force_llm,
             ),
             split_profiles(args.profiles) or [],
         )
@@ -106,11 +101,9 @@ def main() -> None:
                 model=args.model,
                 retrieval_profile=args.retrieval_profile,
                 command_token=args.command_token or os.getenv("CHATBOT_COMMAND_TOKEN"),
-                use_rag=(not args.no_rag or args.rag_only) and not args.local_files,
-                rag_only=args.rag_only,
+                use_rag=not args.no_rag and not args.local_files,
                 use_local_files=args.local_files,
                 use_web_search=args.web_search,
-                force_llm=args.force_llm,
             )
         )
         if args.json:
@@ -136,20 +129,13 @@ def main() -> None:
                 model=args.model,
                 retrieval_profile=args.retrieval_profile,
                 command_token=args.command_token or os.getenv("CHATBOT_COMMAND_TOKEN"),
-                use_rag=(not args.no_rag or args.rag_only) and not args.local_files,
-                rag_only=args.rag_only,
+                use_rag=not args.no_rag and not args.local_files,
                 use_local_files=args.local_files,
                 use_web_search=args.web_search,
             )
         )
         print(response.answer)
         print(f"source={response.source}\n")
-
-
-def split_profiles(value: str | None) -> list[str] | None:
-    if not value:
-        return None
-    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 if __name__ == "__main__":

@@ -195,9 +195,17 @@ h2 {
 .chat-layout,
 .ingest-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.8fr);
+  grid-template-columns: minmax(0, 1fr) 320px;
   gap: 18px;
   align-items: start;
+}
+
+.chat-layout > *,
+.ingest-layout > *,
+.form-grid > *,
+.control-stack,
+.control-block {
+  min-width: 0;
 }
 
 .console-surface,
@@ -221,6 +229,12 @@ h2 {
   display: none;
 }
 
+.form-grid > .is-hidden {
+  display: block;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 label {
   display: block;
   margin-bottom: 8px;
@@ -238,6 +252,8 @@ textarea,
 input,
 select {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   border: 1px solid var(--line-strong);
   border-radius: 6px;
   padding: 12px 13px;
@@ -271,6 +287,26 @@ select[multiple] {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
   margin-top: 16px;
+}
+
+#provider-block {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+#model-block {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+#retrieval-profile-block {
+  grid-column: 3;
+  grid-row: 1;
+}
+
+#command-token-block {
+  grid-column: 1 / span 3;
+  grid-row: 2;
 }
 
 .toggle-row {
@@ -415,5 +451,18 @@ code {
 
   .terminal-display {
     min-height: 420px;
+  }
+
+  #provider-block,
+  #model-block,
+  #retrieval-profile-block,
+  #command-token-block {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .form-grid > .is-hidden {
+    display: none;
+    visibility: visible;
   }
 }

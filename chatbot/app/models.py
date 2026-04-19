@@ -12,10 +12,8 @@ class ChatRequest:
     retrieval_profile: str | None = None
     command_token: str | None = None
     use_rag: bool = True
-    rag_only: bool = False
     use_local_files: bool = False
     use_web_search: bool | None = None
-    force_llm: bool = False
 
 
 @dataclass

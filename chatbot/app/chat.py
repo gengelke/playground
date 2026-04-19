@@ -24,7 +24,7 @@ from app.sources import (
 )
 
 
-GENERATION_HINTS = (
+GENERATION_HINTS = frozenset({
     "summarize",
     "summary",
     "explain",
@@ -37,7 +37,7 @@ GENERATION_HINTS = (
     "erkläre",
     "erklaere",
     "warum",
-)
+})
 
 
 class ChatService:
@@ -50,9 +50,8 @@ class ChatService:
         if not message:
             return ChatResponse(answer="Please enter a question.", source="validation")
 
-        normalized = normalize_text(message)
         provider, model = selected_provider_model(self.config, request.provider, request.model)
-        use_rag = request.use_rag or request.rag_only
+        use_rag = request.use_rag
         retrieval_profile = request.retrieval_profile or default_retrieval_profile(self.config)
         if use_rag and request.use_local_files:
             return self.finalize_response(request, ChatResponse(
@@ -74,7 +73,7 @@ class ChatService:
             return self.finalize_response(request, ChatResponse(
                 answer=exact_rule.get("answer", ""),
                 source="rule_exact",
-                metadata={"matched": exact_rule.get("question"), "normalized": normalized},
+                metadata={"matched": exact_rule.get("question"), "normalized": normalize_text(message)},
             ))
 
         pattern_rule = match_pattern_rule(self.config, message)
@@ -171,27 +170,7 @@ class ChatService:
             try:
                 profile = get_retrieval_profile(self.config, retrieval_profile)
                 retrieval_metadata = retrieval_profile_metadata(profile)
-                if profile.get("type") == "local_files":
-                    local_file_result = search_local_files(self.config, message, require_match=False)
-                    retrieval_metadata["latency_ms"] = elapsed_ms(retrieval_started)
-                    if not local_file_result:
-                        return self.finalize_response(request, ChatResponse(
-                            answer="No relevant local file content found.",
-                            source="local_file_empty",
-                            metadata={"context": [], "use_rag": use_rag, "retrieval": retrieval_metadata},
-                        ))
-                    chunks = local_file_context_chunks(local_file_result, retrieval_profile)
-                    return self.finalize_response(request, ChatResponse(
-                        answer=format_file_answer(local_file_result),
-                        source="local_file",
-                        metadata={
-                            "context": chunks_to_context(chunks),
-                            "chunks": chunks_metadata(chunks),
-                            "retrieval": retrieval_metadata,
-                        },
-                    ))
-                else:
-                    rag_chunks = search_retrieval_profile(self.config, message, retrieval_profile)
+                rag_chunks = search_retrieval_profile(self.config, message, retrieval_profile)
             except Exception as exc:
                 return self.finalize_response(request, ChatResponse(
                     answer=f"Retrieval profile '{retrieval_profile}' is unavailable: {exc}",
@@ -208,7 +187,7 @@ class ChatService:
             ))
 
         web_result = None if use_rag else search_web(self.config, message, request.use_web_search)
-        if web_result and web_result.get("answer") and not should_call_llm(message, request):
+        if web_result and web_result.get("answer") and not should_call_llm(message):
             return self.finalize_response(request, ChatResponse(answer=web_result["answer"], source="web_search", metadata=web_result))
 
         context = chunks_to_context(rag_chunks)
@@ -235,7 +214,7 @@ class ChatService:
 
         return self.finalize_response(request, ChatResponse(
             answer=llm_result.answer,
-            source="llm" if not llm_result.metadata.get("error") else "none",
+            source="llm",
             provider=llm_result.provider,
             model=llm_result.model,
             metadata={
@@ -257,10 +236,8 @@ class ChatService:
                     retrieval_profile=profile,
                     command_token=request.command_token,
                     use_rag=True,
-                    rag_only=True,
                     use_local_files=False,
                     use_web_search=False,
-                    force_llm=request.force_llm,
                 )
             )
             results.append(
@@ -283,9 +260,7 @@ class ChatService:
         return response
 
 
-def should_call_llm(message: str, request: ChatRequest) -> bool:
-    if request.force_llm:
-        return True
+def should_call_llm(message: str) -> bool:
     normalized = normalize_text(message)
     return any(hint in normalized for hint in GENERATION_HINTS)
 
@@ -307,15 +282,6 @@ def format_rest_answer(result: dict[str, Any]) -> str:
     return f"REST source: {result.get('name')}\nStatus: {result.get('status_code')}\n\n{result.get('body')}"
 
 
-def format_chunks(chunks: list[RetrievedChunk]) -> str:
-    lines = ["Relevant RAG context:"]
-    for chunk in chunks:
-        label = f"{chunk.source_path}"
-        if chunk.chunk_index is not None:
-            label += f" chunk {chunk.chunk_index}"
-        lines.append(f"\n[{chunk.retriever} score={chunk.score:.3f}] {label}\n{chunk.text}")
-    return "\n".join(lines)
-
 
 def chunks_metadata(chunks: list[RetrievedChunk]) -> list[dict[str, Any]]:
     return [
@@ -334,21 +300,6 @@ def chunks_to_context(chunks: list[RetrievedChunk]) -> list[dict[str, str]]:
     return [{"source": f"{chunk.retriever}:{chunk.source_path}", "text": chunk.text} for chunk in chunks]
 
 
-def local_file_context_chunks(result: dict[str, Any], profile_name: str) -> list[RetrievedChunk]:
-    chunks = []
-    for index, match in enumerate((result or {}).get("matches", [])):
-        chunks.append(
-            RetrievedChunk(
-                text=match.get("text", ""),
-                source_path=match.get("path", ""),
-                chunk_index=index,
-                score=1.0,
-                retriever=f"local_files:{profile_name}",
-            )
-        )
-    return chunks
-
-
 def retrieval_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:
     metadata = {
         "profile": profile.get("name"),
@@ -358,8 +309,6 @@ def retrieval_profile_metadata(profile: dict[str, Any]) -> dict[str, Any]:
         metadata["collection"] = profile.get("collection")
     if profile.get("embedding"):
         metadata["embedding"] = profile.get("embedding")
-    if profile.get("profiles"):
-        metadata["profiles"] = profile.get("profiles")
     return metadata
 
 

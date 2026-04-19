@@ -193,9 +193,6 @@ documents:
   chunk_size: 900
   chunk_overlap: 150
   top_k: 4
-  min_query_chars: 4
-  min_query_tokens: 2
-  min_score: 0.25
   prepared_path: data/uploads/prepared
   pdf_section_chars: 5000
   pdf_min_section_chars: 1200
@@ -206,27 +203,12 @@ history:
   max_entries: 500
 
 retrieval:
-  default_profile: hybrid
+  default_profile: sqlite
   ingest_profiles:
     - sqlite
-    - qdrant_local_hash
   profiles:
-    - name: local_files
-      type: local_files
     - name: sqlite
       type: sqlite
-    - name: hybrid
-      type: hybrid
-      profiles:
-        - qdrant_local_hash
-        - sqlite
-    - name: qdrant_local_hash
-      type: qdrant
-      collection: chatbot_chunks_local_hash
-      embedding:
-        provider: local_hash
-        model: local-hash-96
-        vector_size: 96
     - name: qdrant_openai
       type: qdrant
       collection: chatbot_chunks_openai
@@ -246,30 +228,13 @@ retrieval:
         vector_size: 768
         base_url: ${OLLAMA_EMBED_URL:-http://localhost:11434/api/embed}
         timeout_seconds: 180
-    - name: qdrant_anthropic_openai
-      type: qdrant
-      collection: chatbot_chunks_anthropic_openai
-      embedding:
-        provider: openai
-        model: text-embedding-3-small
-        vector_size: 1536
-        base_url: https://api.openai.com/v1/embeddings
-        api_key_env: OPENAI_API_KEY
-        timeout_seconds: 60
 
 qdrant:
   enabled: true
   url: ${QDRANT_URL:-http://localhost:6333}
   collection: chatbot_chunks
-  vector_size: 96
+  vector_size: 1536
   timeout_seconds: 3
-  min_query_chars: 4
-  min_query_tokens: 2
-  min_score: 0.2
-  candidate_multiplier: 5
-  min_candidates: 20
-  lexical_rerank_weight: 2.0
-  lexical_min_score: 0.45
 
 web_search:
   enabled: false

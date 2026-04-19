@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Optional
 
@@ -11,8 +12,8 @@ from pydantic import BaseModel, Field
 from app.chat import ChatService
 from app.config import PROJECT_ROOT, load_config
 from app.history import clear_history, delete_history_item, get_history_item, list_history
-from app.ingest import ingest_paths, ignored_document_reason
-from app.models import ChatRequest
+from app.ingest import ignored_document_reason, ingest_paths, split_profiles
+from app.models import ChatRequest, ChatResponse
 from app.retrieval import configured_retrieval_profiles, default_ingest_profiles, default_retrieval_profile
 
 
@@ -28,10 +29,8 @@ class ChatApiRequest(BaseModel):
     model: Optional[str] = None
     retrieval_profile: Optional[str] = None
     use_rag: bool = True
-    rag_only: bool = False
     use_local_files: bool = False
     use_web_search: Optional[bool] = None
-    force_llm: bool = False
 
 
 class ChatCompareApiRequest(BaseModel):
@@ -39,7 +38,6 @@ class ChatCompareApiRequest(BaseModel):
     provider: Optional[str] = None
     model: Optional[str] = None
     retrieval_profiles: list[str] = Field(min_length=1)
-    force_llm: bool = False
 
 
 class IngestApiRequest(BaseModel):
@@ -78,20 +76,11 @@ def chat(request: ChatApiRequest, authorization: str | None = Header(default=Non
             retrieval_profile=request.retrieval_profile,
             command_token=bearer_token(authorization),
             use_rag=request.use_rag,
-            rag_only=request.rag_only,
             use_local_files=request.use_local_files,
             use_web_search=request.use_web_search,
-            force_llm=request.force_llm,
         )
     )
-    return {
-        "answer": response.answer,
-        "source": response.source,
-        "provider": response.provider,
-        "model": response.model,
-        "tool": response.tool,
-        "metadata": response.metadata,
-    }
+    return chat_response_dict(response)
 
 
 @app.post("/api/chat/compare")
@@ -102,7 +91,6 @@ def chat_compare(request: ChatCompareApiRequest, authorization: str | None = Hea
             provider=request.provider,
             model=request.model,
             command_token=bearer_token(authorization),
-            force_llm=request.force_llm,
         ),
         request.retrieval_profiles,
     )
@@ -183,12 +171,6 @@ def safe_upload_name(name: str) -> str:
     return result or "upload.txt"
 
 
-def split_profiles(value: str | None) -> list[str] | None:
-    if not value:
-        return None
-    return [item.strip() for item in value.split(",") if item.strip()]
-
-
 def bearer_token(authorization: str | None) -> str | None:
     if not authorization:
         return None
@@ -196,3 +178,7 @@ def bearer_token(authorization: str | None) -> str | None:
     if scheme.lower() != "bearer" or not token:
         return None
     return token.strip()
+
+
+def chat_response_dict(response: ChatResponse) -> dict[str, Any]:
+    return asdict(response)

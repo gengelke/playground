@@ -278,10 +278,6 @@ def search_web(config: dict[str, Any], message: str, enabled_override: bool | No
     return {"provider": provider, "answer": answer, "related": related}
 
 
-def best_excerpt(text: str, query: str, max_chars: int = 1200) -> str:
-    excerpt, _score = best_excerpt_with_score(text, query, max_chars=max_chars)
-    return excerpt
-
 
 def best_excerpt_with_score(text: str, query: str, max_chars: int = 1200) -> tuple[str, float]:
     if not text.strip():

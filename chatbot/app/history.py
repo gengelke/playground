@@ -22,28 +22,56 @@ def init_history_db(config: dict[str, Any]) -> None:
     path = history_path(config)
     path.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(path) as conn:
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS chat_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at REAL NOT NULL,
-                message TEXT NOT NULL,
-                answer TEXT NOT NULL,
-                source TEXT NOT NULL,
-                provider TEXT,
-                model TEXT,
-                tool TEXT,
-                retrieval_profile TEXT,
-                use_rag INTEGER NOT NULL,
-                rag_only INTEGER NOT NULL,
-                use_local_files INTEGER NOT NULL,
-                use_web_search INTEGER,
-                force_llm INTEGER NOT NULL,
-                metadata_json TEXT NOT NULL
-            )
-            """
-        )
+        create_history_table(conn)
+        migrate_old_history_columns(conn)
         conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_created_at ON chat_history(created_at)")
+
+
+def create_history_table(conn: sqlite3.Connection) -> None:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS chat_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created_at REAL NOT NULL,
+            message TEXT NOT NULL,
+            answer TEXT NOT NULL,
+            source TEXT NOT NULL,
+            provider TEXT,
+            model TEXT,
+            tool TEXT,
+            retrieval_profile TEXT,
+            use_rag INTEGER NOT NULL,
+            use_local_files INTEGER NOT NULL,
+            use_web_search INTEGER,
+            metadata_json TEXT NOT NULL
+        )
+        """
+    )
+
+
+def migrate_old_history_columns(conn: sqlite3.Connection) -> None:
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(chat_history)").fetchall()}
+    obsolete = {"rag" + "_only", "force" + "_llm"}
+    if not obsolete.intersection(columns):
+        return
+
+    conn.execute("ALTER TABLE chat_history RENAME TO chat_history_old")
+    create_history_table(conn)
+    conn.execute(
+        """
+        INSERT INTO chat_history (
+            id, created_at, message, answer, source, provider, model, tool,
+            retrieval_profile, use_rag, use_local_files, use_web_search,
+            metadata_json
+        )
+        SELECT
+            id, created_at, message, answer, source, provider, model, tool,
+            retrieval_profile, use_rag, use_local_files, use_web_search,
+            metadata_json
+        FROM chat_history_old
+        """
+    )
+    conn.execute("DROP TABLE chat_history_old")
 
 
 def record_chat(config: dict[str, Any], request: ChatRequest, response: ChatResponse) -> int | None:
@@ -64,13 +92,11 @@ def record_chat(config: dict[str, Any], request: ChatRequest, response: ChatResp
                 tool,
                 retrieval_profile,
                 use_rag,
-                rag_only,
                 use_local_files,
                 use_web_search,
-                force_llm,
                 metadata_json
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 time.time(),
@@ -82,10 +108,8 @@ def record_chat(config: dict[str, Any], request: ChatRequest, response: ChatResp
                 response.tool,
                 request.retrieval_profile,
                 int(request.use_rag),
-                int(request.rag_only),
                 int(request.use_local_files),
                 None if request.use_web_search is None else int(request.use_web_search),
-                int(request.force_llm),
                 json.dumps(response.metadata, ensure_ascii=False),
             ),
         )
@@ -102,8 +126,8 @@ def list_history(config: dict[str, Any], limit: int = 50) -> list[dict[str, Any]
         rows = conn.execute(
             """
             SELECT id, created_at, message, answer, source, provider, model, tool,
-                   retrieval_profile, use_rag, rag_only, use_local_files,
-                   use_web_search, force_llm, metadata_json
+                   retrieval_profile, use_rag, use_local_files,
+                   use_web_search, metadata_json
             FROM chat_history
             ORDER BY created_at DESC
             LIMIT ?
@@ -120,8 +144,8 @@ def get_history_item(config: dict[str, Any], history_id: int) -> dict[str, Any] 
         row = conn.execute(
             """
             SELECT id, created_at, message, answer, source, provider, model, tool,
-                   retrieval_profile, use_rag, rag_only, use_local_files,
-                   use_web_search, force_llm, metadata_json
+                   retrieval_profile, use_rag, use_local_files,
+                   use_web_search, metadata_json
             FROM chat_history
             WHERE id = ?
             """,
@@ -180,9 +204,7 @@ def row_to_history_item(row: sqlite3.Row) -> dict[str, Any]:
         "tool": row["tool"],
         "retrieval_profile": row["retrieval_profile"],
         "use_rag": bool(row["use_rag"]),
-        "rag_only": bool(row["rag_only"]),
         "use_local_files": bool(row["use_local_files"]),
         "use_web_search": None if row["use_web_search"] is None else bool(row["use_web_search"]),
-        "force_llm": bool(row["force_llm"]),
         "metadata": metadata,
     }

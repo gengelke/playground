@@ -1,27 +1,13 @@
 from __future__ import annotations
 
-import math
 import sqlite3
 import time
 from pathlib import Path
 from typing import Any
 
 from app.config import resolve_path
-from app.embeddings import DEFAULT_VECTOR_SIZE, embed_local_hash, embed_text as embed_with_profile, tokenize
+from app.embeddings import embed_text as embed_with_profile, tokenize
 from app.models import RetrievedChunk
-
-
-DEFAULT_MIN_QUERY_TOKENS = 2
-DEFAULT_MIN_QUERY_CHARS = 4
-DEFAULT_QDRANT_MIN_SCORE = 0.2
-DEFAULT_QDRANT_CANDIDATE_MULTIPLIER = 5
-DEFAULT_QDRANT_MIN_CANDIDATES = 20
-DEFAULT_QDRANT_LEXICAL_RERANK_WEIGHT = 2.0
-DEFAULT_QDRANT_LEXICAL_MIN_SCORE = 0.45
-
-
-def embed_text(text: str, size: int = DEFAULT_VECTOR_SIZE) -> list[float]:
-    return embed_local_hash(text, size=size)
 
 
 def configured_retrieval_profiles(config: dict[str, Any]) -> dict[str, dict[str, Any]]:
@@ -32,37 +18,31 @@ def configured_retrieval_profiles(config: dict[str, Any]) -> dict[str, dict[str,
     if isinstance(configured, list):
         return {profile["name"]: profile for profile in configured if profile.get("name")}
 
-    qdrant = config.get("qdrant", {})
     return {
-        "local_files": {"name": "local_files", "type": "local_files"},
         "sqlite": {"name": "sqlite", "type": "sqlite"},
-        "qdrant_local_hash": {
-            "name": "qdrant_local_hash",
+        "qdrant_openai": {
+            "name": "qdrant_openai",
             "type": "qdrant",
-            "collection": qdrant.get("collection", "chatbot_chunks"),
+            "collection": "chatbot_chunks_openai",
             "embedding": {
-                "provider": "local_hash",
-                "model": "local-hash-96",
-                "vector_size": int(qdrant.get("vector_size", DEFAULT_VECTOR_SIZE)),
+                "provider": "openai",
+                "model": "text-embedding-3-small",
+                "vector_size": 1536,
             },
         },
-        "hybrid": {"name": "hybrid", "type": "hybrid", "profiles": ["qdrant_local_hash", "sqlite"]},
     }
 
 
-def retrieval_profile_names(config: dict[str, Any]) -> list[str]:
-    return list(configured_retrieval_profiles(config))
-
 
 def default_retrieval_profile(config: dict[str, Any]) -> str:
-    return config.get("retrieval", {}).get("default_profile", "hybrid")
+    return config.get("retrieval", {}).get("default_profile", "sqlite")
 
 
 def default_ingest_profiles(config: dict[str, Any]) -> list[str]:
     configured = config.get("retrieval", {}).get("ingest_profiles")
     if configured:
         return list(configured)
-    return ["sqlite", "qdrant_local_hash"] if qdrant_enabled(config) else ["sqlite"]
+    return ["sqlite"]
 
 
 def get_retrieval_profile(config: dict[str, Any], name: str | None = None) -> dict[str, Any]:
@@ -82,24 +62,19 @@ def concrete_ingest_profiles(config: dict[str, Any], names: list[str] | None = N
         profile = profiles.get(name)
         if not profile:
             raise ValueError(f"unknown retrieval profile: {name}")
-        nested = profile.get("profiles", []) if profile.get("type") == "hybrid" else [name]
-        for nested_name in nested:
-            nested_profile = profiles.get(nested_name)
-            if not nested_profile:
-                raise ValueError(f"unknown retrieval profile: {nested_name}")
-            if nested_name in seen or nested_profile.get("type") == "local_files":
-                continue
-            seen.add(nested_name)
-            selected.append(nested_profile)
+        if name in seen:
+            continue
+        seen.add(name)
+        selected.append(profile)
     return selected
 
 
 def qdrant_profile_details(config: dict[str, Any], profile: dict[str, Any] | None = None) -> tuple[str, dict[str, Any], int]:
     qdrant = config.get("qdrant", {})
-    profile = profile or get_retrieval_profile(config, "qdrant_local_hash")
+    profile = profile or get_retrieval_profile(config, "qdrant_openai")
     embedding = profile.get("embedding", {})
     collection = profile.get("collection") or qdrant.get("collection", "chatbot_chunks")
-    size = int(embedding.get("vector_size", qdrant.get("vector_size", DEFAULT_VECTOR_SIZE)))
+    size = int(embedding.get("vector_size", qdrant.get("vector_size", 1536)))
     return collection, embedding, size
 
 
@@ -154,10 +129,7 @@ def search_sqlite_chunks(config: dict[str, Any], query: str, limit: int | None =
     document_config = config.get("documents", {})
     limit = limit or int(document_config.get("top_k", 4))
     query_tokens = set(tokenize(query))
-    min_tokens = int(document_config.get("min_query_tokens", DEFAULT_MIN_QUERY_TOKENS))
-    min_chars = int(document_config.get("min_query_chars", DEFAULT_MIN_QUERY_CHARS))
-    min_score = float(document_config.get("min_score", 0.25))
-    if len(query.strip()) < min_chars or len(query_tokens) < min_tokens:
+    if not query_tokens:
         return []
 
     with sqlite3.connect(sqlite_path(config)) as conn:
@@ -176,8 +148,6 @@ def search_sqlite_chunks(config: dict[str, Any], query: str, limit: int | None =
         if text_overlap == 0 and metadata_overlap == 0:
             continue
         score = (text_overlap + metadata_overlap) / max(len(query_tokens), 1)
-        if score < min_score:
-            continue
         scored.append(
             RetrievedChunk(
                 text=row["text"],
@@ -224,7 +194,7 @@ def reset_qdrant_collection(config: dict[str, Any], profile_name: str | None = N
     if not qdrant_enabled(config):
         return
 
-    profile = get_retrieval_profile(config, profile_name or "qdrant_local_hash")
+    profile = get_retrieval_profile(config, profile_name or default_retrieval_profile(config))
     collection, _embedding, _size = qdrant_profile_details(config, profile)
     try:
         client = get_qdrant_client(config)
@@ -232,11 +202,6 @@ def reset_qdrant_collection(config: dict[str, Any], profile_name: str | None = N
         ensure_qdrant_collection(config, profile)
     except Exception:
         pass
-
-
-def upsert_qdrant_chunks(config: dict[str, Any], chunk_ids: list[int], source_path: str, chunks: list[str]) -> bool:
-    result = upsert_qdrant_chunks_for_profile(config, "qdrant_local_hash", chunk_ids, source_path, chunks)
-    return bool(result.get("stored"))
 
 
 def upsert_qdrant_chunks_for_profile(
@@ -263,7 +228,7 @@ def upsert_qdrant_chunks_for_profile(
         embedding_metadata = None
         for chunk_id, text in zip(chunk_ids, chunks):
             embedding_text = f"{source_path}\n{text}"
-            vector, metadata = embed_with_profile(config, embedding, embedding_text, input_type="document")
+            vector, metadata = embed_with_profile(config, embedding, embedding_text)
             embedding_metadata = metadata
             if len(vector) != expected_size:
                 raise RuntimeError(
@@ -291,29 +256,23 @@ def search_qdrant(config: dict[str, Any], query: str, limit: int | None = None, 
     if not qdrant_enabled(config):
         return []
 
-    qdrant = config.get("qdrant", {})
-    profile = get_retrieval_profile(config, profile_name or "qdrant_local_hash")
+    profile = get_retrieval_profile(config, profile_name or default_retrieval_profile(config))
     if profile.get("type") != "qdrant":
         return []
-    query_tokens = tokenize(query)
-    min_tokens = int(qdrant.get("min_query_tokens", DEFAULT_MIN_QUERY_TOKENS))
-    min_chars = int(qdrant.get("min_query_chars", DEFAULT_MIN_QUERY_CHARS))
-    if len(query.strip()) < min_chars or len(query_tokens) < min_tokens:
+    if not tokenize(query):
         return []
 
     collection, embedding, _expected_size = qdrant_profile_details(config, profile)
     limit = limit or int(config.get("documents", {}).get("top_k", 4))
-    candidate_limit = qdrant_candidate_limit(qdrant, limit)
-    min_score = float(qdrant.get("min_score", DEFAULT_QDRANT_MIN_SCORE))
 
     try:
         ensure_qdrant_collection(config, profile)
         client = get_qdrant_client(config)
-        vector, _metadata = embed_with_profile(config, embedding, query, input_type="query")
+        vector, _metadata = embed_with_profile(config, embedding, query)
         try:
-            results = client.search(collection_name=collection, query_vector=vector, limit=candidate_limit)
+            results = client.search(collection_name=collection, query_vector=vector, limit=limit)
         except AttributeError:
-            results = client.query_points(collection_name=collection, query=vector, limit=candidate_limit).points
+            results = client.query_points(collection_name=collection, query=vector, limit=limit).points
     except Exception:
         return []
 
@@ -333,65 +292,7 @@ def search_qdrant(config: dict[str, Any], query: str, limit: int | None = None, 
                 retriever=f"qdrant:{profile.get('name', profile_name or 'qdrant')}",
             )
         )
-    return relevant_reranked_qdrant_chunks(config, query, chunks, min_score)[:limit]
-
-
-def qdrant_candidate_limit(qdrant: dict[str, Any], final_limit: int) -> int:
-    multiplier = int(qdrant.get("candidate_multiplier", DEFAULT_QDRANT_CANDIDATE_MULTIPLIER))
-    minimum = int(qdrant.get("min_candidates", DEFAULT_QDRANT_MIN_CANDIDATES))
-    return max(final_limit, final_limit * multiplier, minimum)
-
-
-def relevant_reranked_qdrant_chunks(
-    config: dict[str, Any],
-    query: str,
-    chunks: list[RetrievedChunk],
-    min_vector_score: float,
-) -> list[RetrievedChunk]:
-    lexical_min_score = float(config.get("qdrant", {}).get("lexical_min_score", DEFAULT_QDRANT_LEXICAL_MIN_SCORE))
-    ranked = rerank_qdrant_candidates(config, query, chunks)
-    return [
-        chunk
-        for chunk, lexical_score in ranked
-        if chunk.score >= min_vector_score or lexical_score >= lexical_min_score
-    ]
-
-
-def rerank_qdrant_chunks(config: dict[str, Any], query: str, chunks: list[RetrievedChunk]) -> list[RetrievedChunk]:
-    return [chunk for chunk, _lexical_score in rerank_qdrant_candidates(config, query, chunks)]
-
-
-def rerank_qdrant_candidates(config: dict[str, Any], query: str, chunks: list[RetrievedChunk]) -> list[tuple[RetrievedChunk, float]]:
-    weight = float(config.get("qdrant", {}).get("lexical_rerank_weight", DEFAULT_QDRANT_LEXICAL_RERANK_WEIGHT))
-    if weight <= 0 or len(chunks) <= 1:
-        return [(chunk, 0.0) for chunk in chunks]
-
-    query_tokens = set(tokenize(query))
-    if not query_tokens:
-        return [(chunk, 0.0) for chunk in chunks]
-
-    chunk_tokens = [set(tokenize(f"{chunk.source_path} {chunk.text}")) for chunk in chunks]
-    document_frequency = {
-        token: sum(1 for tokens in chunk_tokens if token in tokens)
-        for token in query_tokens
-    }
-    token_weights = {
-        token: math.log((len(chunks) + 1) / (document_frequency.get(token, 0) + 1)) + 1.0
-        for token in query_tokens
-    }
-    max_lexical_score = sum(token_weights.values()) or 1.0
-
-    def lexical_score(index: int) -> float:
-        matched_weight = sum(token_weights[token] for token in query_tokens if token in chunk_tokens[index])
-        return matched_weight / max_lexical_score
-
-    def rank_score(item: tuple[int, RetrievedChunk]) -> float:
-        index, chunk = item
-        return chunk.score + (weight * lexical_score(index))
-
-    ranked = list(enumerate(chunks))
-    ranked.sort(key=rank_score, reverse=True)
-    return [(chunk, lexical_score(index)) for index, chunk in ranked]
+    return chunks[:limit]
 
 
 def search_retrieval_profile(config: dict[str, Any], query: str, profile_name: str | None = None, limit: int | None = None) -> list[RetrievedChunk]:
@@ -401,30 +302,4 @@ def search_retrieval_profile(config: dict[str, Any], query: str, profile_name: s
         return search_sqlite_chunks(config, query, limit=limit)
     if profile_type == "qdrant":
         return search_qdrant(config, query, limit=limit, profile_name=profile["name"])
-    if profile_type == "hybrid":
-        chunks: list[RetrievedChunk] = []
-        for nested_name in profile.get("profiles", []):
-            chunks.extend(search_retrieval_profile(config, query, nested_name, limit=limit))
-        return merge_chunks(config, chunks, limit=limit)
-    if profile_type == "local_files":
-        return []
     raise ValueError(f"unsupported retrieval profile type: {profile_type}")
-
-
-def hybrid_search(config: dict[str, Any], query: str, limit: int | None = None) -> list[RetrievedChunk]:
-    return search_retrieval_profile(config, query, default_retrieval_profile(config), limit=limit)
-
-
-def merge_chunks(config: dict[str, Any], chunks: list[RetrievedChunk], limit: int | None = None) -> list[RetrievedChunk]:
-    limit = limit or int(config.get("documents", {}).get("top_k", 4))
-    seen: set[tuple[str, str]] = set()
-    merged: list[RetrievedChunk] = []
-    for chunk in sorted(chunks, key=lambda item: item.score, reverse=True):
-        key = (chunk.source_path, chunk.text[:120])
-        if key in seen:
-            continue
-        seen.add(key)
-        merged.append(chunk)
-        if len(merged) >= limit:
-            break
-    return merged

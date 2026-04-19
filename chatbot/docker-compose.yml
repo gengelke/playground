@@ -6,6 +6,8 @@ services:
       - "${CHATBOT_PORT:-8088}:8088"
     environment:
       CHATBOT_CONFIG: /app/config/config.yml
+      CHATBOT_DEFAULT_PROVIDER: ${CHATBOT_DEFAULT_PROVIDER:-openai}
+      CHATBOT_DEFAULT_MODEL: ${CHATBOT_DEFAULT_MODEL:-gpt-4.1-mini}
       QDRANT_URL: ${QDRANT_URL:-http://playground-qdrant:6333}
       LOCAL_LLM_URL: ${LOCAL_LLM_URL:-http://playground-ollama:11434/api/chat}
       OLLAMA_EMBED_URL: ${OLLAMA_EMBED_URL:-http://playground-ollama:11434/api/embed}

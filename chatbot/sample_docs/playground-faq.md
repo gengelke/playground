@@ -568,30 +568,26 @@ Configured `Simon says` commands include:
 - `Simon says delete employee <employeeId>`: deletes an employee through the
   API service.
 
-## How can the chatbot compare local files, SQLite, and Qdrant?
+## How can the chatbot compare SQLite and Qdrant retrieval?
 
 The chatbot supports retrieval profiles. They make it possible to ask the same
 question against different knowledge sources and embedding strategies.
 
 Default retrieval profiles include:
 
-- `local_files`
 - `sqlite`
-- `hybrid`
-- `qdrant_local_hash`
 - `qdrant_openai`
 - `qdrant_ollama`
-- `qdrant_anthropic_openai`
 
 This makes the chatbot useful for comparing answer quality and efficiency when
 using:
 
-- direct local files
 - SQLite token-based chunk retrieval
-- Qdrant with the built-in local hash embedding
 - Qdrant with OpenAI embeddings
 - Qdrant with Ollama embeddings
-- Qdrant with OpenAI embeddings used for Anthropic-style retrieval
+
+Direct local files are available through local-file mode, not as a retrieval
+profile. That keeps direct file lookup separate from ingested RAG retrieval.
 
 Example compare call:
 
@@ -602,7 +598,7 @@ curl -s http://127.0.0.1:8088/api/chat/compare \
     "message": "Who maintains the playground?",
     "provider": "openai",
     "model": "gpt-4.1-mini",
-    "retrieval_profiles": ["sqlite", "qdrant_local_hash", "qdrant_openai"]
+    "retrieval_profiles": ["sqlite", "qdrant_openai", "qdrant_ollama"]
   }'
 ```
 

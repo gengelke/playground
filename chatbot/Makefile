@@ -131,7 +131,7 @@ test: deps
 
 ingest: deps
 	@if [[ -z "$(PATHS)" ]]; then \
-		echo "Usage: make ingest PATHS='sample_docs [more paths]' [PROFILES='sqlite,qdrant_local_hash']"; \
+		echo "Usage: make ingest PATHS='sample_docs [more paths]' [PROFILES='sqlite,qdrant_openai']"; \
 		exit 1; \
 	fi
 	@cd "$(MAKEFILE_DIR)" && CHATBOT_CONFIG="$(CHATBOT_CONFIG)" OLLAMA_EMBED_URL="$(OLLAMA_EMBED_URL)" LOCAL_LLM_URL="$(LOCAL_LLM_URL)" QDRANT_URL="$(QDRANT_URL)" \
