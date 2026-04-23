@@ -174,19 +174,15 @@ def search_local_files(config: dict[str, Any], message: str, require_match: bool
         if excerpts:
             matched_source_names.append(str(source.get("name")))
             excerpts.sort(key=lambda item: item["score"], reverse=True)
-            source_best_score = excerpts[0]["score"]
-            source_minimum_score = max(1.0, source_best_score * 0.5)
             source_match_limit = int(source.get("max_matches", source.get("max_files", 10)))
             global_match_limit = max(global_match_limit, source_match_limit)
-            candidates.extend([item for item in excerpts if item["score"] >= source_minimum_score][:source_match_limit])
+            candidates.extend(excerpts[:source_match_limit])
 
     if not candidates:
         return None
 
     candidates.sort(key=lambda item: item["score"], reverse=True)
-    best_score = candidates[0]["score"]
-    minimum_score = max(1.0, best_score * 0.5)
-    matches = [item for item in candidates if item["score"] >= minimum_score][:global_match_limit]
+    matches = candidates[:global_match_limit]
     unique_source_names = list(dict.fromkeys(matched_source_names))
     return {
         "name": unique_source_names[0] if len(unique_source_names) == 1 else "multiple",
@@ -289,61 +285,20 @@ def best_excerpt_with_score(text: str, query: str, max_chars: int = 1200) -> tup
     paragraphs = [part.strip() for part in re.split(r"\n\s*\n", text) if part.strip()]
     if not paragraphs:
         paragraphs = [text]
-    blocks = excerpt_blocks(paragraphs)
-    block_tokens = [token_counts(block) for block in blocks]
-    document_frequency = {
-        token: sum(1 for tokens in block_tokens if token in tokens)
-        for token in query_tokens
-    }
-    block_count = max(len(blocks), 1)
 
-    def score(index: int) -> float:
-        tokens = block_tokens[index]
-        total = 0.0
-        for token in query_tokens:
-            if token not in tokens:
-                continue
-            # Rare query terms are more useful than common terms, without a language-specific stopword list.
-            rarity = block_count / max(document_frequency.get(token, 1), 1)
-            total += rarity
-        return total
+    def score(paragraph: str) -> float:
+        tokens = {token for token in tokenize(paragraph) if len(token) > 1}
+        return float(sum(1 for token in query_tokens if token in tokens))
 
-    best_index = max(range(len(blocks)), key=score)
-    best_score = score(best_index)
+    best = max(paragraphs, key=score)
+    best_score = score(best)
     if best_score == 0:
         return "", 0.0
-    return blocks[best_index][:max_chars].strip(), best_score
-
-
-def token_counts(text: str) -> dict[str, int]:
-    counts: dict[str, int] = {}
-    for token in tokenize(text):
-        if len(token) <= 1:
-            continue
-        counts[token] = counts.get(token, 0) + 1
-    return counts
+    return best[:max_chars].strip(), best_score
 
 
 def query_search_tokens(text: str) -> set[str]:
-    tokens = {token for token in tokenize(text) if len(token) > 1}
-    longer_tokens = {token for token in tokens if len(token) > 2}
-    return longer_tokens or tokens
-
-
-def excerpt_blocks(paragraphs: list[str]) -> list[str]:
-    blocks = []
-    for index, paragraph in enumerate(paragraphs):
-        if is_markdown_heading(paragraph) and index + 1 < len(paragraphs):
-            blocks.append(f"{paragraph}\n\n{paragraphs[index + 1]}")
-        elif index > 0 and is_markdown_heading(paragraphs[index - 1]):
-            blocks.append(f"{paragraphs[index - 1]}\n\n{paragraph}")
-        else:
-            blocks.append(paragraph)
-    return blocks
-
-
-def is_markdown_heading(paragraph: str) -> bool:
-    return bool(re.match(r"^#{1,6}\s+\S+", paragraph.strip()))
+    return {token for token in tokenize(text) if len(token) > 1}
 
 
 def format_rows(rows: list[dict[str, Any]]) -> str:

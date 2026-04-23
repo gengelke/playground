@@ -1,3 +1,7 @@
+function escapeHtml(text) {
+  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 function paddedHistoryId(value) {
   return String(value).padStart(3, "0");
 }
@@ -198,9 +202,22 @@ async function initChatPage() {
         } : body)
       });
       const data = await response.json();
-      answer.textContent = compareMode.checked
-        ? (data.results || []).map((item) => `# ${retrievalProfileLabelByName(item.retrieval_profile)}\n${item.answer || ""}`).join("\n\n")
-        : data.answer || "";
+      if (compareMode.checked) {
+        const cards = (data.results || []).map((item) => {
+          const label = retrievalProfileLabelByName(item.retrieval_profile);
+          const meta = [item.source, item.provider, item.model].filter(Boolean).join(" · ");
+          return `<div class="compare-card">
+  <div class="compare-card-header">
+    <strong class="compare-label">${escapeHtml(label)}</strong>
+    ${meta ? `<span class="compare-meta">${escapeHtml(meta)}</span>` : ""}
+  </div>
+  <pre class="compare-body">${escapeHtml(item.answer || "(no answer)")}</pre>
+</div>`;
+        }).join("");
+        answer.innerHTML = `<div class="compare-list">${cards}</div>`;
+      } else {
+        answer.textContent = data.answer || "";
+      }
       metadata.textContent = JSON.stringify({
         source: data.source,
         provider: data.provider,

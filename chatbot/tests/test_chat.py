@@ -497,7 +497,7 @@ def test_local_files_mode_uses_only_configured_local_files(tmp_path: Path) -> No
     assert "The playground includes Jenkins and Ollama." in response.answer
 
 
-def test_local_files_mode_ignores_stopwords_when_selecting_excerpt(tmp_path: Path) -> None:
+def test_local_files_mode_selects_highest_overlap_excerpt(tmp_path: Path) -> None:
     config = base_config(tmp_path)
     docs = tmp_path / "docs"
     docs.mkdir()
@@ -505,7 +505,7 @@ def test_local_files_mode_ignores_stopwords_when_selecting_excerpt(tmp_path: Pat
         "# DevOps Playground Notes\n\n"
         "This chatbot is intended to run as an optional service in the DevOps playground.\n\n"
         "# The Author of DevOps Playground\n\n"
-        "Gordon Engelke is the author and maintainer of the DevOps Playground\n",
+        "Who is an author? Gordon Engelke is the author and maintainer of the DevOps Playground\n",
         encoding="utf-8",
     )
     (docs / "playground-faq.md").write_text(
@@ -529,7 +529,7 @@ def test_local_files_mode_ignores_stopwords_when_selecting_excerpt(tmp_path: Pat
 
     assert response.source == "local_file"
     assert "Gordon Engelke is the author and maintainer" in response.answer
-    assert "educational repository" not in response.answer
+    assert "Gordon Engelke is the author and maintainer" in response.metadata["matches"][0]["text"]
 
 
 def test_local_files_mode_ranks_across_multiple_sources(tmp_path: Path) -> None:
@@ -570,7 +570,7 @@ def test_local_files_mode_ranks_across_multiple_sources(tmp_path: Path) -> None:
 
     assert response.source == "local_file"
     assert "Directory embeddings support semantic retrieval" in response.answer
-    assert "You can also work inside a service directory" not in response.answer
+    assert "You can also work inside a service directory" in response.answer
 
 
 def test_local_files_and_rag_are_mutually_exclusive(tmp_path: Path) -> None:

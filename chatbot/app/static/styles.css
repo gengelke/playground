@@ -426,6 +426,55 @@ button:disabled {
   color: #4d5d51;
 }
 
+.compare-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.compare-card {
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.compare-card-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(61, 122, 71, 0.05);
+  border-bottom: 1px solid var(--line);
+  border-left: 4px solid var(--green);
+}
+
+.compare-card:nth-child(4n+2) .compare-card-header { border-left-color: var(--teal); }
+.compare-card:nth-child(4n+3) .compare-card-header { border-left-color: var(--amber); }
+.compare-card:nth-child(4n+4) .compare-card-header { border-left-color: var(--red); }
+
+.compare-label {
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.compare-meta {
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.compare-body {
+  margin: 0;
+  padding: 14px 16px;
+  font: inherit;
+  font-size: 0.93rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: transparent;
+  border: none;
+}
+
 code {
   color: #1f3125;
 }
