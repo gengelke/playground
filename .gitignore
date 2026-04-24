@@ -98,6 +98,7 @@ nginx/runtime/
 ollama/data/
 qdrant/data/
 vault/.vault/
+zammad/.env
 
 # =========================
 # Node (schema downloader)

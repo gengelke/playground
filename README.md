@@ -29,6 +29,7 @@ The playground currently contains these top-level service components:
 | `ollama` | `ollama` | Local Ollama LLM runtime in Docker with persistent model storage and automatic `llama3.1` pull. | [ollama/README.md](ollama/README.md) |
 | `chatbot` | `chatbot` | Local-first Python/FastAPI chatbot with CLI, REST API, web UI, configurable rules/tools/sources, SQLite document chunks, and optional Qdrant RAG. | [chatbot/README.md](chatbot/README.md) |
 | `n8n` | `n8n` | Local n8n workflow automation instance with task runners enabled and persistent workflow/credential storage. Connects to the shared Qdrant vector network. | [n8n/](n8n/) |
+| `zammad` | `zammad` | Local Zammad helpdesk stack with PostgreSQL, Redis, Elasticsearch, generated first-run admin credentials, and Vault sync. | [zammad/README.md](zammad/README.md) |
 
 ## Per-service usage
 
@@ -36,7 +37,7 @@ Each service has its own README and Makefile. Use the top-level Makefile for
 common lifecycle commands. Replace `<service>` with one of:
 
 ```text
-vault gitea gitlab nexus api jenkins nginx qdrant ollama chatbot n8n
+vault gitea gitlab nexus api jenkins nginx qdrant ollama chatbot n8n zammad
 ```
 
 ```bash
@@ -86,7 +87,7 @@ make down MODE=docker
 
 All-service dependency order:
 
-`vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> qdrant -> ollama -> chatbot`
+`vault -> gitea -> gitlab -> nexus -> api -> jenkins -> nginx -> qdrant -> ollama -> chatbot -> n8n -> zammad`
 
 Start the DevOps scenario subset:
 
@@ -96,11 +97,11 @@ make devops MODE=docker
 
 DevOps scenario order:
 
-`vault -> nexus -> api -> gitea -> jenkins -> nginx -> qdrant -> ollama -> chatbot`
+`vault -> nexus -> api -> gitea -> jenkins -> nginx -> qdrant -> ollama -> chatbot -> n8n -> zammad`
 
 The DevOps scenario intentionally does not start `gitlab`; use `make all` or
 `make up-gitlab` when you want GitLab as well. Vault-dependent services
-(`gitea`, `gitlab`, `nexus`, `jenkins`) verify Vault health during startup and
+(`gitea`, `gitlab`, `nexus`, `jenkins`, `zammad`) verify Vault health during startup and
 reuse the current `MODE`.
 
 ## Cleanup
@@ -113,7 +114,7 @@ make distclean
 make distclan
 ```
 
-That cleanup currently runs `distclean` for `chatbot`, `ollama`, `qdrant`, `nginx`, `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`.
+That cleanup currently runs `distclean` for `zammad`, `chatbot`, `ollama`, `qdrant`, `nginx`, `jenkins`, `api`, `nexus`, `gitlab`, `gitea`, and `vault`.
 
 ## Central Port Configuration
 
